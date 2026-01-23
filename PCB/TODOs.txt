@@ -1,0 +1,15 @@
+MAINBOARD
+Problems:
+-no pulldown resistor on 5v enable
+-dc jack slots too much tolerance - wiggles from side to side
+-add some gnd test points for soldering
+-vias in text make it bad sometimes
+-no indication for temp sensor orientation
+-old project name
+-no thermal reliefs on dc jack, terminals makes it hard to solder correctly
+-temp sensors are hard to solder because of the pitch, make the footprint a bit wider
+-change name on pcb
+
+Connector Boards
+-no indication of pins on jst connector
+-change name on pcb
