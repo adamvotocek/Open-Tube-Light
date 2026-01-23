@@ -1,0 +1,1018 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "052cf08b-6551-42ef-97cd-b67b48019709")
+	(paper "A4")
+	(title_block
+		(title "Led Tube MCU Board")
+		(date "2025-11-01")
+		(rev "A")
+	)
+	(lib_symbols)
+	(rectangle
+		(start 106.68 17.78)
+		(end 280.67 125.73)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid d3d0685c-ca7b-45df-82f3-e6887699fac9)
+	)
+	(text "RS485\n"
+		(exclude_from_sim no)
+		(at 250.19 77.724 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "02fb7e68-0680-4676-9984-81d5257e2ad6")
+	)
+	(text "5V"
+		(exclude_from_sim no)
+		(at 274.32 22.098 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "081cbeed-d32e-49b5-b201-6298794578c7")
+	)
+	(text "I2C + 4 GPIOs"
+		(exclude_from_sim no)
+		(at 219.964 34.29 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "0dd728bb-83b6-46e5-93ed-e1231f226020")
+	)
+	(text "SWD"
+		(exclude_from_sim no)
+		(at 163.576 105.664 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "12316048-4115-45e6-8ef1-2de2d526dafd")
+	)
+	(text "RMII"
+		(exclude_from_sim no)
+		(at 219.456 105.664 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "17ee6305-3397-448f-a2e5-b9ab3bf517dc")
+	)
+	(text "2 diff. pairs"
+		(exclude_from_sim no)
+		(at 252.73 105.664 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "331f9e81-3699-4de8-af9e-e31882fcb3b5")
+	)
+	(text "TODO: TEMPERATURE SENSOR"
+		(exclude_from_sim no)
+		(at 200.66 123.444 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+				(bold yes)
+				(color 255 0 23 1)
+			)
+		)
+		(uuid "36efd9ca-53b0-439d-9a30-40c863ad37a8")
+	)
+	(text "5V"
+		(exclude_from_sim no)
+		(at 127 52.578 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "3f672178-30be-4cad-a279-c8c2d5116cbb")
+	)
+	(text "LED TUBE MCU BOARD\n"
+		(exclude_from_sim no)
+		(at 59.944 22.86 0)
+		(effects
+			(font
+				(size 5 5)
+				(thickness 0.508)
+				(bold yes)
+			)
+		)
+		(uuid "6d882c3b-3d5c-4514-85dc-0102ade8cb6c")
+	)
+	(text "5V"
+		(exclude_from_sim no)
+		(at 241.3 67.818 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "6e8a330c-fd0d-4ac3-a943-390b14139cb3")
+	)
+	(text "RS485\n"
+		(exclude_from_sim no)
+		(at 250.19 82.804 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "88ca4608-e462-45b2-a8cb-d74589a1bf01")
+	)
+	(text "UART"
+		(exclude_from_sim no)
+		(at 219.71 80.264 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "a0560099-2392-4168-a0b9-3fa245557f72")
+	)
+	(text "BLOCK DIAGRAM"
+		(exclude_from_sim no)
+		(at 128.27 23.114 0)
+		(effects
+			(font
+				(size 3 3)
+				(thickness 0.508)
+				(bold yes)
+			)
+		)
+		(uuid "a523404a-66b2-4e5d-ab58-62334d3af9e7")
+	)
+	(text "3.3V"
+		(exclude_from_sim no)
+		(at 205.74 22.098 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "ba023ac8-346e-47a8-af4f-be3628580254")
+	)
+	(text "3.3V"
+		(exclude_from_sim no)
+		(at 241.3 93.218 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "be226099-3fab-4ebc-aa3c-fcd6ee9ec234")
+	)
+	(text "SPI\n"
+		(exclude_from_sim no)
+		(at 219.456 52.324 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "d5ae7a12-53a2-4ba5-b64a-ac3f50c42488")
+	)
+	(text "3.3V"
+		(exclude_from_sim no)
+		(at 149.86 52.578 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "e53d9bd6-8736-45c7-9e17-4780014c6ce0")
+	)
+	(text_box "MCU\nSTM32H7Vxx"
+		(exclude_from_sim no)
+		(at 175.26 27.94 0)
+		(size 35.56 86.36)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 194 255 254 1)
+		)
+		(effects
+			(font
+				(size 2 2)
+			)
+		)
+		(uuid "05fbd7e2-6d15-428c-ae44-a4fd8729d7bd")
+	)
+	(text_box "Ethernet EtherCON Connector"
+		(exclude_from_sim no)
+		(at 261.62 99.06 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "0c09b25d-a4b6-42b8-a16d-914cfc8d456e")
+	)
+	(text_box "Introduction\nThis is the schematic for the mainboard of the Led Tube project. It features the STM32H723Vxx MCU, an ethernet connection, an RS485 connection for DMX, and a few connectors for the SPI LED strip, display, buttons, and a temperature sensor. There is also a 3.3V voltage regulator that gets 5V power through a connector from a buck converter on another board."
+		(exclude_from_sim no)
+		(at 17.78 33.02 0)
+		(size 83.82 20.32)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "42a75168-7b20-4408-b825-069ee1085f54")
+	)
+	(text_box "DMX In XLR Connector"
+		(exclude_from_sim no)
+		(at 261.62 63.5 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "68c583fb-938b-4162-8f93-e20f155363f1")
+	)
+	(text_box "Led Strip Data Connector"
+		(exclude_from_sim no)
+		(at 261.62 45.72 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "79bc13f4-1727-4364-80c6-3b7578f0b556")
+	)
+	(text_box "STLink Connector\n"
+		(exclude_from_sim no)
+		(at 137.16 99.06 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "7a59eac3-ba73-41de-90aa-818647de9e06")
+	)
+	(text_box "Additional BOM items"
+		(exclude_from_sim no)
+		(at 17.78 78.74 0)
+		(size 83.82 20.32)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "93d76533-42d6-4ccd-9807-617ef6c399a9")
+	)
+	(text_box "3.3V Regulator"
+		(exclude_from_sim no)
+		(at 137.16 58.42 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 194 255 254 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "9e5f9f87-2d68-4958-a547-442401ab76b3")
+	)
+	(text_box "Ethernet PHY and Transformer\n"
+		(exclude_from_sim no)
+		(at 228.6 99.06 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 194 255 254 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "a9c62a1b-3f62-4011-9592-6db7756aea09")
+	)
+	(text_box "Table of contents\n1. Root - Top sheet (this sheet)\n2. MCU\n3. Power\n4. Ethernet\n5. RS485\n6. Peripherals"
+		(exclude_from_sim no)
+		(at 17.78 55.88 0)
+		(size 83.82 20.32)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "ce995536-f02c-4ca2-a399-65f61d522b9e")
+	)
+	(text_box "5V Power In Connector"
+		(exclude_from_sim no)
+		(at 114.3 58.42 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "dd631968-0984-4c03-9de0-ae6aa7ec82b0")
+	)
+	(text_box "DMX Out Connector"
+		(exclude_from_sim no)
+		(at 261.62 81.28 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "e3bf1411-7cbd-409f-9542-9a149fa5e9ee")
+	)
+	(text_box "UART to RS485"
+		(exclude_from_sim no)
+		(at 228.6 73.66 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 194 255 254 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "ee8d1f13-5170-4d5f-a7d7-fd7d2030dd10")
+	)
+	(text_box "Display and button board Connector\n"
+		(exclude_from_sim no)
+		(at 261.62 27.94 0)
+		(size 15.24 15.24)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type color)
+			(color 252 255 170 1)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "fd2e4d77-23da-47de-8af9-833d7fb51bff")
+	)
+	(polyline
+		(pts
+			(xy 149.86 53.34) (xy 152.4 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "04c523b1-498c-4ac7-a585-1e50ed905194")
+	)
+	(polyline
+		(pts
+			(xy 210.82 106.68) (xy 228.6 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "14f59c3a-8aa5-4248-8eee-719674d2a5c8")
+	)
+	(polyline
+		(pts
+			(xy 152.4 106.68) (xy 175.26 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1791b628-ec8e-4197-901e-33dcf2a544bc")
+	)
+	(polyline
+		(pts
+			(xy 256.54 88.9) (xy 261.62 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3bf59c68-3e48-4d47-bf49-9baeda2c2fac")
+	)
+	(polyline
+		(pts
+			(xy 243.84 78.74) (xy 256.54 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3f201afd-c8df-45d0-899c-aa251eead97f")
+	)
+	(polyline
+		(pts
+			(xy 147.32 53.34) (xy 149.86 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "415c5469-d8e2-45a8-9fc6-39b1efdf1eff")
+	)
+	(polyline
+		(pts
+			(xy 129.54 66.04) (xy 137.16 66.04)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "43a33398-f009-42fc-87ab-48b50fa13429")
+	)
+	(polyline
+		(pts
+			(xy 261.62 71.12) (xy 256.54 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "443049fc-b78b-40d4-babe-12b2e604cc8e")
+	)
+	(polyline
+		(pts
+			(xy 274.32 22.86) (xy 274.32 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4730d6e3-aec7-416a-9f21-1dc5f5cf8a8e")
+	)
+	(polyline
+		(pts
+			(xy 210.82 53.34) (xy 261.62 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "47938e24-20db-448d-8582-025f1c291dea")
+	)
+	(polyline
+		(pts
+			(xy 205.74 22.86) (xy 208.28 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4c1bbbb8-8b39-40dc-b15b-dfee141774e6")
+	)
+	(polyline
+		(pts
+			(xy 256.54 76.2) (xy 256.54 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5d69f649-06c8-4125-a641-c11d0c6388a2")
+	)
+	(polyline
+		(pts
+			(xy 256.54 81.28) (xy 256.54 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "621f758e-856d-4d5b-99f3-1eb2fdc3bf7e")
+	)
+	(polyline
+		(pts
+			(xy 241.3 93.98) (xy 241.3 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "68e35be9-e302-4b34-a10d-c974b46b3b80")
+	)
+	(polyline
+		(pts
+			(xy 205.74 22.86) (xy 205.74 27.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "791132cf-b86b-4fcb-98ed-41f4dd5af27e")
+	)
+	(polyline
+		(pts
+			(xy 210.82 35.56) (xy 261.62 35.56)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "80c6e0fc-e627-480a-ae47-96d88d61622f")
+	)
+	(polyline
+		(pts
+			(xy 124.46 53.34) (xy 127 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9321f8eb-ffd9-404b-9a90-4642e637fc88")
+	)
+	(polyline
+		(pts
+			(xy 243.84 106.68) (xy 261.62 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9804d1fe-7d28-4f04-8f53-739538eb7ae8")
+	)
+	(polyline
+		(pts
+			(xy 241.3 93.98) (xy 243.84 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a0a11cef-3fab-4dc8-be65-e21cdeb14df3")
+	)
+	(polyline
+		(pts
+			(xy 238.76 68.58) (xy 241.3 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a3360f7d-c43d-4170-be97-eb7df894f203")
+	)
+	(polyline
+		(pts
+			(xy 241.3 68.58) (xy 243.84 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a4ccf8d5-f425-4ea7-bcc9-804c4c57b3b2")
+	)
+	(polyline
+		(pts
+			(xy 274.32 22.86) (xy 276.86 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "aec79af6-557b-4a7b-8a3a-017925588bb7")
+	)
+	(polyline
+		(pts
+			(xy 203.2 22.86) (xy 205.74 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ba1b03d5-51f8-46e0-865d-9b950cd33f65")
+	)
+	(polyline
+		(pts
+			(xy 243.84 81.28) (xy 256.54 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c62abf91-159f-437a-a707-75dc1430e7e8")
+	)
+	(polyline
+		(pts
+			(xy 149.86 53.34) (xy 149.86 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d294fc9d-afd4-4a3f-9813-35c1d1e126d5")
+	)
+	(polyline
+		(pts
+			(xy 210.82 81.28) (xy 228.6 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d64ec035-8afb-4a65-b112-669f9dda268c")
+	)
+	(polyline
+		(pts
+			(xy 238.76 93.98) (xy 241.3 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dc21cadd-a52d-47cd-92df-f7465eb79503")
+	)
+	(polyline
+		(pts
+			(xy 127 53.34) (xy 127 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e2e1c5a2-568c-4353-acd2-5f76588bf18e")
+	)
+	(polyline
+		(pts
+			(xy 256.54 71.12) (xy 256.54 76.2)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e2fac539-2ea6-460b-9a42-ebe142aa1fab")
+	)
+	(polyline
+		(pts
+			(xy 241.3 68.58) (xy 241.3 73.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e404d698-67b9-4b7f-9a60-71a26aefbdab")
+	)
+	(polyline
+		(pts
+			(xy 127 53.34) (xy 129.54 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e5e20586-1f8e-409d-9953-6e04c55e58f7")
+	)
+	(polyline
+		(pts
+			(xy 271.78 22.86) (xy 274.32 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f4714486-a86b-4abc-89c5-7139d39e45b4")
+	)
+	(sheet
+		(at 88.9 132.08)
+		(size 27.94 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "16075476-ac29-400f-91c1-1fb7a647bf5c")
+		(property "Sheetname" "Ethernet"
+			(at 88.9 131.3684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ethernet.kicad_sch"
+			(at 88.9 160.6046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "ledTubeFixture"
+				(path "/052cf08b-6551-42ef-97cd-b67b48019709"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 53.34 132.08)
+		(size 27.94 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "47622bb5-cfe7-43b9-97e8-18ea4ae7cf46")
+		(property "Sheetname" "Power"
+			(at 53.34 131.3684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power.kicad_sch"
+			(at 53.34 160.6046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "ledTubeFixture"
+				(path "/052cf08b-6551-42ef-97cd-b67b48019709"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 124.46 132.08)
+		(size 27.94 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "6b6a9339-70c8-46c3-8aa5-e6d52be2bc08")
+		(property "Sheetname" "RS485"
+			(at 124.46 131.3684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "RS485.kicad_sch"
+			(at 124.46 160.6046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "ledTubeFixture"
+				(path "/052cf08b-6551-42ef-97cd-b67b48019709"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 160.02 132.08)
+		(size 27.94 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "accf531c-b62e-441d-859e-09f408ca9fef")
+		(property "Sheetname" "Peripherals"
+			(at 160.02 131.3684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "peripherals.kicad_sch"
+			(at 160.02 160.6046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "ledTubeFixture"
+				(path "/052cf08b-6551-42ef-97cd-b67b48019709"
+					(page "6")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 17.78 132.08)
+		(size 27.94 27.94)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "b40ca13d-25c0-4ad2-90f0-309e35573572")
+		(property "Sheetname" "MCU"
+			(at 17.78 131.3684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MCU.kicad_sch"
+			(at 17.78 160.6046 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "ledTubeFixture"
+				(path "/052cf08b-6551-42ef-97cd-b67b48019709"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)
