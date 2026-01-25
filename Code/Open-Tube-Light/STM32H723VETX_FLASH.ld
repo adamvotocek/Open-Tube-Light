@@ -174,5 +174,26 @@ SECTIONS
     libgcc.a ( * )
   }
 
+  /* MODIFICATIONS BY USER BEGIN */
+
+.d2_nocache (NOLOAD) :
+{
+  . = ALIGN(32);
+  __d2_nc_start__ = .;
+  
+  /* Ethernet descriptors at the beginning */
+  KEEP(*(.RxDescripSection))
+  KEEP(*(.TxDescripSection))
+
+  /* Other non-cacheable buffers */
+  KEEP(*(.d2_nocache))
+  KEEP(*(.d2_nocache.*))
+
+  . = ALIGN(32);
+  __d2_nc_end__ = .;
+} >RAM_D2
+  
+  /* MODIFICATIONS BY USER END */
+
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
