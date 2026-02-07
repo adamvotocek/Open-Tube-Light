@@ -45,8 +45,9 @@ MEMORY
 {
   ITCMRAM (xrw)    : ORIGIN = 0x00000000,   LENGTH = 64K
   DTCMRAM (xrw)    : ORIGIN = 0x20000000,   LENGTH = 128K
-  FLASH    (rx)    : ORIGIN = 0x08000000,   LENGTH = 512K
-  RAM_D1  (xrw)    : ORIGIN = 0x24000000,   LENGTH = 320K
+  FLASH    (rx)    : ORIGIN = 0x08000000,   LENGTH = 512K 
+  RAM_D1_LWIP  (xrw)    : ORIGIN = 0x24000000,   LENGTH = 64K /* USER ADDED FOR A NICE MPU ALIGNMENT */
+  RAM_D1  (xrw)    : ORIGIN = 0x24010000,   LENGTH = 256K /* ORIGINAL ADDRESS WAS 0x24000000 */
   RAM_D2  (xrw)    : ORIGIN = 0x30000000,   LENGTH = 32K
   RAM_D3  (xrw)    : ORIGIN = 0x38000000,   LENGTH = 16K
 }
@@ -166,34 +167,36 @@ SECTIONS
     . = ALIGN(8);
   } >RAM_D1
 
+  /* MODIFICATIONS BY USER BEGIN */	
+
+  .rxpool_sec 0x24008000 (NOLOAD) : {
+      . = ALIGN(32);
+      *(.Rx_PoolSection) 
+      . = ALIGN(32);
+  } >RAM_D1_LWIP
+
+  /* ETH Tx and other DMA in D2 */
+  .d2_dma_nocache_sec (NOLOAD) : {
+        . = ABSOLUTE(0x30000000);
+        . = ALIGN(32);
+        *(.RxDecripSection)   /* Eth Rx Descriptors */
+        *(.TxDecripSection)   /* Eth Tx Descriptors */
+        
+        . = ALIGN(32);
+        *(.TxArraySection)    /* Eth Tx Buffers */
+        *(.spi_buffers)       /* LED Strip SPI buffers*/
+        *(.uart_buffers)      /* DMX UART buffers*/
+    } >RAM_D2
+  
+  /* MODIFICATIONS BY USER END */
   /* Remove information from the standard libraries */
+  
   /DISCARD/ :
   {
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
   }
-
-  /* MODIFICATIONS BY USER BEGIN */
-
-.d2_nocache (NOLOAD) :
-{
-  . = ALIGN(32);
-  __d2_nc_start__ = .;
-  
-  /* Ethernet descriptors at the beginning */
-  KEEP(*(.RxDescripSection))
-  KEEP(*(.TxDescripSection))
-
-  /* Other non-cacheable buffers */
-  KEEP(*(.d2_nocache))
-  KEEP(*(.d2_nocache.*))
-
-  . = ALIGN(32);
-  __d2_nc_end__ = .;
-} >RAM_D2
-  
-  /* MODIFICATIONS BY USER END */
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
