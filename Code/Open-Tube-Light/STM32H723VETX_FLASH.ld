@@ -183,7 +183,6 @@ SECTIONS
         *(.TxDecripSection)   /* Eth Tx Descriptors */
         
         . = ALIGN(32);
-        *(.TxArraySection)    /* Eth Tx Buffers */
         *(.spi_buffers)       /* LED Strip SPI buffers*/
         *(.uart_buffers)      /* DMX UART buffers*/
     } >RAM_D2
