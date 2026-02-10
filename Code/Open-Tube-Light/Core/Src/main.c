@@ -53,6 +53,10 @@ SK9822_HandleTypeDef hsk9822; // handle for the SK9822 strip
 //static uint8_t ledStripBuffer[SK9822_BUFFER_SIZE]; // buffer for SK9822 SPI data
 static uint8_t ledStripBuffer[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used)); // buffer for SK9822 SPI data in D2 RAM (configured by MPU as non-cacheable)
 volatile uint8_t spi_tx_busy_flag = 0;
+
+// DMX stuff
+#define NUMBER_OF_UNIVERSES 1
+uint8_t dmx_buffer[NUMBER_OF_UNIVERSES][512];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/

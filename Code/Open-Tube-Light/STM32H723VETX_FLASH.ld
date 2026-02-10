@@ -186,6 +186,11 @@ SECTIONS
         *(.spi_buffers)       /* LED Strip SPI buffers*/
         *(.uart_buffers)      /* DMX UART buffers*/
     } >RAM_D2
+    
+  .dtcm_sec (NOLOAD) : {
+        . = ALIGN(32);
+        *(.DMX_Buffers)       /* DMX buffers in DTCM */
+    } >DTCMRAM
   
   /* MODIFICATIONS BY USER END */
   /* Remove information from the standard libraries */
