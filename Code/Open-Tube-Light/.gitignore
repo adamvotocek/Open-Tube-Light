@@ -51,3 +51,6 @@ release
 *.su
 *.idb
 *.pdb
+/um1713-developing-applications-on-stm32cube-with-lwip-tcpip-stack-stmicroelectronics.pdf
+/UM2217-6_H7_HALs_and_LLs.pdf
+/art-net.pdf
