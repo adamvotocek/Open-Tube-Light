@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <sk9822.h>
+#include "artnet.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,21 +51,26 @@ DMA_HandleTypeDef hdma_spi1_tx;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for EffectTask */
+osThreadId_t EffectTaskHandle;
+const osThreadAttr_t EffectTask_attributes = {
+  .name = "EffectTask",
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
 // Handles
 SK9822_HandleTypeDef hsk9822; // handle for the SK9822 strip
 
-// SK9822 Private Variables
-//static uint8_t ledStripBuffer[SK9822_BUFFER_SIZE]; // buffer for SK9822 SPI data
-static uint8_t ledStripBuffer[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used)); // buffer for SK9822 SPI data in D2 RAM (configured by MPU as non-cacheable)
+// SK9822 Ping-Pong Buffers in D2 RAM (DMA accessible, non-cacheable via MPU)
+static uint8_t spiBuffer1[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used));
+static uint8_t spiBuffer2[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used));
+static uint8_t *activeBuffer = spiBuffer1;
+static uint8_t *prepareBuffer = spiBuffer2;
 volatile uint8_t spi_tx_busy_flag = 0;
-
-// DMX stuff
-#define NUMBER_OF_UNIVERSES 1
-uint8_t dmx_buffer[NUMBER_OF_UNIVERSES][512];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,6 +80,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 void StartDefaultTask(void *argument);
+void StartEffectTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -131,8 +138,8 @@ int main(void)
     //5V PSU disabled at startup
     HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_RESET);
 
-    sk9822_init(&hsk9822, &hspi1, ledStripBuffer, &spi_tx_busy_flag);
-
+    // Initialize SK9822 with the first buffer (will swap in processing task)
+    sk9822_init(&hsk9822, &hspi1, prepareBuffer, &spi_tx_busy_flag);
 
     HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_SET);
 
@@ -161,6 +168,9 @@ int main(void)
   /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
+  /* creation of EffectTask */
+  EffectTaskHandle = osThreadNew(StartEffectTask, NULL, &EffectTask_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -177,22 +187,6 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
     while(1) {
-//        for (uint8_t i = 0; i < 255; ++i) {
-//            sk9822_set_all(&hsk9822, 255, 255, 255, i);
-//            (void) sk9822_show(&hsk9822); // start DMA if not busy
-//            HAL_Delay(15);
-//        }
-
-        sk9822_set_all(&hsk9822, 0, 0, 0, 255);
-        (void) sk9822_show(&hsk9822); // start DMA if not busy
-        HAL_Delay(5000);
-
-//        MX_LWIP_Process();
-//        //blink
-//        HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
-//        HAL_Delay(500);
-//        HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
-//        HAL_Delay(500);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -370,6 +364,7 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
     // Clear SPI busy flag for the SK9822 handle when our SPI completes
     sk9822_on_tx_cplt_callback(&hsk9822, hspi);
 }
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -384,12 +379,81 @@ void StartDefaultTask(void *argument)
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
+  
+  // Initialize Art-Net after LwIP is ready
+  // Pass the EffectTask handle so it can be notified on new data
+  ArtNet_Init(EffectTaskHandle);
+  
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    // Toggle LED to show system is alive
+    HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
+    osDelay(500);
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartEffectTask */
+/**
+* @brief Function implementing the EffectTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartEffectTask */
+void StartEffectTask(void *argument)
+{
+  /* USER CODE BEGIN StartEffectTask */
+  // Wait a bit for Art-Net to initialize
+  osDelay(100);
+  
+  /* Infinite loop */
+  for(;;)
+  {
+    // Wait for notification from Art-Net (OpSync or all universes received)
+    uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+    
+    if (flags & 0x01) {
+      // Latch Art-Net data (copy shadow to active buffer)
+      ArtNet_LatchData();
+      
+      // Wait for previous DMA transfer to complete
+      while (spi_tx_busy_flag) {
+        osDelay(1);
+      }
+      
+      // Swap buffers: prepare becomes active, active becomes prepare
+      uint8_t *temp = activeBuffer;
+      activeBuffer = prepareBuffer;
+      prepareBuffer = temp;
+      
+      // Point SK9822 handle to the new prepare buffer
+      hsk9822.buffer = prepareBuffer;
+      sk9822_prepare_frames(&hsk9822);
+      
+      // Convert Art-Net DMX data to SK9822 format
+      // Each LED uses 3 bytes (RGB) from DMX data
+      uint16_t led_idx = 0;
+      for (uint8_t uni = 0; uni < ARTNET_NUM_UNIVERSES && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
+        const uint8_t *dmx = ArtNet_GetUniverseData(uni);
+        if (dmx == NULL) continue;
+        
+        // 170 LEDs per universe (170 * 3 = 510 bytes)
+        for (uint16_t ch = 0; ch < 510 && led_idx < SK9822_STRIP_LED_COUNT; ch += 3) {
+          uint8_t r = dmx[ch];
+          uint8_t g = dmx[ch + 1];
+          uint8_t b = dmx[ch + 2];
+          sk9822_set_led(&hsk9822, led_idx, r, g, b, 255);
+          led_idx++;
+        }
+      }
+      
+      // Trigger DMA transfer from the previously prepared (now active) buffer
+      hsk9822.buffer = activeBuffer;
+      sk9822_show(&hsk9822);
+    }
+  }
+  /* USER CODE END StartEffectTask */
 }
 
  /* MPU Configuration */
