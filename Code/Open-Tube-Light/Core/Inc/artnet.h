@@ -23,9 +23,11 @@ extern "C" {
 #define ARTNET_PROTOCOL_VERSION 14
 
 // Universe configuration - adjust based on your LED count
-// 170 LEDs per universe (170 * 3 = 510 bytes)
+// NOTE: The configuration of Port-Address = 0x0000 (net=0, subnet=0, universe=0) is deprecated and not allowed
+//       by the Art-Net 4 specification, but some controllers still use it as the first universe (eg. QLC+).
+//       In this device, it is allowed, but the default universe on net/subnet 0/0 is universe 1 (Port-Address 0x0001).
 #define ARTNET_NUM_UNIVERSES    1
-#define ARTNET_START_UNIVERSE   1           // First universe we subscribe to
+#define ARTNET_START_UNIVERSE   1           // First universe we subscribe to (0-15)
 #define ARTNET_NET              0           // Net (0-127)
 #define ARTNET_SUBNET           0           // Sub-Net (0-15)
 
