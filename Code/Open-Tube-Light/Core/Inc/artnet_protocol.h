@@ -45,7 +45,7 @@ extern "C" {
  * @brief Maximum DMX data length per universe (512 bytes)
  * @note This is the DMX512-A specification limit
  */
-#define ARTNET_DMX_LENGTH       512
+#define ARTNET_DMX_MAX_LENGTH       512
 
 /**
  * @brief OpSync timeout per Art-Net specification (4 seconds)
@@ -109,7 +109,7 @@ typedef struct __attribute__((packed)) {
  */
 typedef struct __attribute__((packed)) {
     uint8_t  id[8];         ///< "Art-Net\0" signature
-    uint16_t opcode;        ///< 0x5000 - OpDmx (little-endian)
+    uint16_t opcode;        ///< 0x5000 - OpDmx/OpOutput (little-endian)
     uint8_t  prot_ver_hi;   ///< Protocol version high byte (0 for Art-Net 4)
     uint8_t  prot_ver_lo;   ///< Protocol version low byte (14 for Art-Net 4)
     uint8_t  sequence;      ///< Sequence number (0 = disabled, 1-255 wraps)
@@ -118,7 +118,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  net;           ///< Upper 7 bits of 15-bit Port-Address
     uint8_t  length_hi;     ///< Data length high byte (big-endian)
     uint8_t  length_lo;     ///< Data length low byte (big-endian)
-    uint8_t  data[ARTNET_DMX_LENGTH];  ///< DMX512 data (up to 512 bytes)
+    uint8_t  data[ARTNET_DMX_MAX_LENGTH];  ///< DMX512 data (up to 512 bytes)
 } ArtNet_ArtDmx_t;
 
 /**
