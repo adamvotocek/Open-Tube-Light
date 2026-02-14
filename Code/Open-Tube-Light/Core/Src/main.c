@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <sk9822.h>
+#include "sk9822.h"
 #include "artnet.h"
 /* USER CODE END Includes */
 
@@ -410,7 +410,7 @@ void StartEffectTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    // Wait for notification from Art-Net (OpSync or all universes received)
+    // Wait for notification from Art-Net
     uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
     
     if (flags & 0x01) {
