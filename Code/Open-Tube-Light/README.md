@@ -1,6 +1,5 @@
 # OpenTubeLight - Code Documentation
 
-<<<<<<< HEAD
 ## Very unorganized TODO LIST:
 - spi led strips should be continuously updated, even if no new data is received. this is because interference can cause artifacts in the led strip over time. (maybe every 300 ms or so)
 
@@ -8,8 +7,6 @@
 
 
 
-=======
->>>>>>> refs/remotes/origin/main
 ## Ethernet and LwIP Setup
 
 ### Memory structure

@@ -45,7 +45,6 @@ extern "C" {
  * @brief Maximum DMX data length per universe (512 bytes)
  * @note This is the DMX512-A specification limit
  */
-<<<<<<< HEAD
 #define ARTNET_DMX_MAX_LENGTH       512
 
 /**
@@ -120,82 +119,6 @@ typedef struct __attribute__((packed)) {
     uint8_t  length_hi;     ///< Data length high byte (big-endian)
     uint8_t  length_lo;     ///< Data length low byte (big-endian)
     uint8_t  data[ARTNET_DMX_MAX_LENGTH];  ///< DMX512 data (up to 512 bytes)
-=======
-#define ARTNET_DMX_LENGTH       512
-
-/**
- * @brief OpSync timeout per Art-Net specification (4 seconds)
- * @note If no OpSync received within this time, revert to immediate output mode
- */
-#define ARTNET_SYNC_TIMEOUT_MS  4000
-
-/**
- * @brief Minimum random delay for ArtPollReply (0 ms)
- * @note Art-Net spec requires random delay between 0-1 second to avoid network congestion
- */
-#define ARTNET_POLL_REPLY_DELAY_MIN_MS  0
-
-/**
- * @brief Maximum random delay for ArtPollReply (1000 ms)
- * @note Art-Net spec requires random delay between 0-1 second to avoid network congestion
- */
-#define ARTNET_POLL_REPLY_DELAY_MAX_MS  1000
-
-/* ========================== OpCodes ========================== */
-
-/**
- * @brief OpPoll - Controller requests node information
- * @note Nodes must respond with ArtPollReply after random delay (0-1s)
- */
-#define ARTNET_OP_POLL          0x2000
-
-/**
- * @brief OpPollReply - Node identification and status
- * @note Sent in response to OpPoll or on network configuration change
- */
-#define ARTNET_OP_POLL_REPLY    0x2100
-
-/**
- * @brief OpDmx (OpOutput) - DMX512 data transmission
- * @note Primary packet type for sending lighting data
- */
-#define ARTNET_OP_DMX           0x5000
-
-/**
- * @brief OpSync - Synchronization frame marker
- * @note Signals all nodes to output previously received OpDmx data simultaneously
- *       This enables tear-free updates across multiple universes
- */
-#define ARTNET_OP_SYNC          0x5200
-
-/* ========================== Packet Structures ========================== */
-
-/**
- * @brief Common Art-Net packet header
- * @note All Art-Net packets begin with this structure
- */
-typedef struct __attribute__((packed)) {
-    uint8_t  id[8];         ///< "Art-Net\0" signature
-    uint16_t opcode;        ///< Little-endian opcode
-} ArtNet_Header_t;
-
-/**
- * @brief ArtDmx packet (OpOutput) - carries DMX512 data
- * @note This is the main packet type for lighting data transmission
- */
-typedef struct __attribute__((packed)) {
-    uint8_t  id[8];         ///< "Art-Net\0" signature
-    uint16_t opcode;        ///< 0x5000 - OpDmx (little-endian)
-    uint8_t  prot_ver_hi;   ///< Protocol version high byte (0 for Art-Net 4)
-    uint8_t  prot_ver_lo;   ///< Protocol version low byte (14 for Art-Net 4)
-    uint8_t  sequence;      ///< Sequence number (0 = disabled, 1-255 wraps)
-    uint8_t  physical;      ///< Physical input port (informational)
-    uint8_t  sub_uni;       ///< Lower 8 bits of 15-bit Port-Address
-    uint8_t  net;           ///< Upper 7 bits of 15-bit Port-Address
-    uint8_t  length_hi;     ///< Data length high byte (big-endian)
-    uint8_t  length_lo;     ///< Data length low byte (big-endian)
-    uint8_t  data[ARTNET_DMX_LENGTH];  ///< DMX512 data (up to 512 bytes)
->>>>>>> refs/remotes/origin/main
 } ArtNet_ArtDmx_t;
 
 /**
