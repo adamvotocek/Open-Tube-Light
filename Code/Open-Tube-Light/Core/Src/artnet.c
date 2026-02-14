@@ -76,7 +76,7 @@ typedef struct {
  * 
  * @note Configure linker script to place .DMX_Buffers section in appropriate RAM region
  */
-static uint8_t shadow_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_LENGTH] 
+static uint8_t shadow_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /**
@@ -91,7 +91,7 @@ static uint8_t shadow_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_LENGTH]
  * 
  * @note Configure linker script to place .DMX_Buffers section in appropriate RAM region
  */
-static uint8_t active_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_LENGTH] 
+static uint8_t active_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /* ========================== Private Variables - State Management ========================== */
@@ -294,7 +294,8 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     }
     
     // Get packet data (assumes contiguous payload for small packets)
-    // For chained pbufs, this may need pbuf_linearize() in production
+    // PBUF_POOL_BUFSIZE should be large enough to hold an entire ethernet frame.
+    // For large fragmented packets, additional handling would be needed, or they should be rejected entirely (IP_REASSEMBLY in lwipopts.h)
     uint8_t *data = (uint8_t *)p->payload;
     
     // Validate Art-Net header signature
@@ -314,12 +315,14 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             }
             break;
             
-        case ARTNET_OP_POLL:
-            ArtPollPacket_Handle(addr, port);
-            break;
-            
         case ARTNET_OP_SYNC:
             ArtSyncPacket_Handle();
+            break;
+
+        case ARTNET_OP_POLL:
+            if (p->tot_len >= 14) { // Minimum ArtPoll size (header only)
+                ArtPollPacket_Handle(addr, port);
+            }
             break;
             
         default:
@@ -347,10 +350,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
  */
 static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len)
 {
-    // Validate protocol version (must be >= 14 for Art-Net 4)
-    if (pkt->prot_ver_hi != 0 || pkt->prot_ver_lo < ARTNET_PROTOCOL_VERSION) {
-        return;
-    }
+    // Protocol version is not validated, for backwards compatibility. The spec requires validation for controllers, not nodes.
     
     // Decode 15-bit Port-Address from packet
     // Port-Address = Net[14:8] : SubNet[7:4] : Universe[3:0]
@@ -371,13 +371,12 @@ static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len)
     
     // Extract DMX data length (big-endian in packet)
     uint16_t dmx_len = (pkt->length_hi << 8) | pkt->length_lo;
-    if (dmx_len > ARTNET_DMX_LENGTH) {
-        dmx_len = ARTNET_DMX_LENGTH;  // Clamp to spec maximum
+    if (dmx_len > ARTNET_DMX_MAX_LENGTH) {
+        dmx_len = ARTNET_DMX_MAX_LENGTH;  // Clamp to spec maximum
     }
     
     // Verify packet contains advertised data
-    uint16_t expected_len = 18 + dmx_len;  // Header + DMX data
-    if (len < expected_len) {
+    if (len < (18 + dmx_len)) {
         return;
     }
     
