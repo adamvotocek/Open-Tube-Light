@@ -100,7 +100,7 @@ static uint8_t active_buffer[ARTNET_NUM_UNIVERSES][ARTNET_DMX_MAX_LENGTH]
 /**
  * @brief Current Art-Net operational state
  * 
- * Tracks sync mode status, universe reception bitmask, and timeout tracking.
+ * Tracks sync mode status, universe reception bitmask, timeout tracking, and merge mode.
  */
 static ArtNet_State_t artnet_state;
 
@@ -514,11 +514,10 @@ static void ArtPollPacket_Handle(const ip_addr_t *addr, u16_t port)
  */
 static void ArtSyncPacket_Handle(const ip_addr_t *src_ip)
 {
-    // ===== ARTSYNC SOURCE IP VALIDATION =====
-    // Per Art-Net spec section on ArtSync:
-    // "In order to allow for multiple controllers on a network, a node shall
-    // compare the source IP of the ArtSync to the source IP of the most recent
-    // ArtDmx packet. The ArtSync shall be ignored if the IP addresses do not match."
+    // ArtSync is only useful for synchronizing multiple universes
+    if (ARTNET_NUM_UNIVERSES <= 1) {
+            return;
+    }
     
     // Ignore if we haven't received any ArtDmx packets yet
     if (ip_addr_isany(&artnet_state.last_artdmx_ip)) {
@@ -530,8 +529,6 @@ static void ArtSyncPacket_Handle(const ip_addr_t *src_ip)
         return;
     }
     
-    // ===== MERGE MODE HANDLING =====
-    // Per Art-Net spec:
     // "When a port is merging multiple streams of ArtDmx from different IP
     // addresses, ArtSync packets shall be ignored."
     if (artnet_state.merge_mode_state) {
@@ -734,8 +731,10 @@ static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port)
     
     // Extended status flags
     reply->status2 = ArtPollReply_BuildStatus2();
-    reply->status3 = ARTNET_STATUS3_DEFAULT;
+    reply->status3 = ARTNET_STATUS3_DEFAULT; // TODO: Implement failsafe behavior
     
+    reply->refresh_rate_lo = ARTNET_MAX_REFRESH_RATE;
+
     // Send unicast reply
     udp_sendto(artnet_pcb, p, addr, port);
     pbuf_free(p);
