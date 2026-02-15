@@ -422,12 +422,7 @@ void StartEffectTask(void *argument)
         osDelay(1);
       }
       
-      // Swap buffers: prepare becomes active, active becomes prepare
-      uint8_t *temp = activeBuffer;
-      activeBuffer = prepareBuffer;
-      prepareBuffer = temp;
-      
-      // Point SK9822 handle to the new prepare buffer
+      // Point SK9822 handle to the prepare buffer
       hsk9822.buffer = prepareBuffer;
       sk9822_prepare_frames(&hsk9822);
       
@@ -440,15 +435,17 @@ void StartEffectTask(void *argument)
         
         // 170 LEDs per universe (170 * 3 = 510 bytes)
         for (uint16_t ch = 0; ch < 510 && led_idx < SK9822_STRIP_LED_COUNT; ch += 3) {
-          uint8_t r = dmx[ch];
-          uint8_t g = dmx[ch + 1];
-          uint8_t b = dmx[ch + 2];
-          sk9822_set_led(&hsk9822, led_idx, r, g, b, 255);
+          sk9822_set_led(&hsk9822, led_idx, dmx[ch], dmx[ch + 1], dmx[ch + 2], 255);
           led_idx++;
         }
       }
       
-      // Trigger DMA transfer from the previously prepared (now active) buffer
+      // Swap SPI buffers: prepare becomes active, active becomes prepare
+      uint8_t *temp = activeBuffer;
+      activeBuffer = prepareBuffer;
+      prepareBuffer = temp;
+      
+      // Trigger DMA transfer from the newly prepared (now active) buffer
       hsk9822.buffer = activeBuffer;
       sk9822_show(&hsk9822);
     }

@@ -45,6 +45,7 @@
 #include "lwip/udp.h"
 #include "lwip/ip_addr.h"
 #include "lwip/tcpip.h"
+#include "lwip/dhcp.h"
 #include "cmsis_os.h"
 #include <string.h>
 
@@ -172,14 +173,15 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
                                        const ip_addr_t *addr, u16_t port);
 
 // Packet handlers
-static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len);
+static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr_t *src_ip);
 static void ArtPollPacket_Handle(const ip_addr_t *addr, u16_t port);
-static void ArtSyncPacket_Handle(void);
+static void ArtSyncPacket_Handle(const ip_addr_t *src_ip);
 
 // ArtPollReply transmission
 static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port);
-static void ArtPollReply_TimerCallback(void *arg);
 static void ArtPollReply_SendFromTcpipThread(void *arg);
+static void ArtPollReply_TimerCallback(void *arg);
+static uint8_t ArtPollReply_BuildStatus2(void);
 
 // Utilities
 static bool ArtNetHeader_Validate(const uint8_t *data, uint16_t len);
@@ -195,7 +197,15 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     // Initialize state structure
     memset(&artnet_state, 0, sizeof(artnet_state));
     artnet_state.universes_expected = (1 << ARTNET_NUM_UNIVERSES) - 1;
+    artnet_state.merge_mode_state = MERGE_INACTIVE;
+    artnet_state.merge_mode_specified = ARTNET_MERGE_DEFAULT; // Default for merge mode
     
+    // Initialize all universe source IPs to "any" (0.0.0.0)
+    for (int i = 0; i < ARTNET_NUM_UNIVERSES; i++) {
+        ip_addr_set_zero(&artnet_state.universe_source_ip[i]);
+    }
+    ip_addr_set_zero(&artnet_state.last_artdmx_ip);
+
     // Clear DMX buffers to zero (lights off)
     memset(shadow_buffer, 0, sizeof(shadow_buffer));
     memset(active_buffer, 0, sizeof(active_buffer));
@@ -311,12 +321,12 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     switch (opcode) {
         case ARTNET_OP_DMX:
             if (p->tot_len >= 18) { // Minimum ArtDmx size (header + length fields)
-                ArtDmxPacket_Handle((const ArtNet_ArtDmx_t *)data, p->tot_len);
+                ArtDmxPacket_Handle((const ArtNet_ArtDmx_t *)data, p->tot_len, addr);
             }
             break;
             
         case ARTNET_OP_SYNC:
-            ArtSyncPacket_Handle();
+            ArtSyncPacket_Handle(addr);
             break;
 
         case ARTNET_OP_POLL:
@@ -339,16 +349,20 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
  * @brief Handle incoming ArtDmx (OpOutput) packet
  * 
  * Validates protocol version and Port-Address, then copies DMX data to
- * shadow buffer. In non-sync mode, triggers output when all universes
- * received. In sync mode, waits for OpSync.
+ * shadow buffer. Tracks source IP addresses per universe to support
+ * ArtSync validation and merge mode detection.
+ * 
+ * In non-sync mode, triggers output when all universes received.
+ * In sync mode, waits for matching ArtSync from same source IP.
  * 
  * @param pkt Pointer to ArtDmx packet structure
  * @param len Total packet length (for validation)
+ * @param src_ip Source IP address of the packet
  * 
  * @note Runs in tcpip_thread context
  * @note Uses Port-Address decoding per Art-Net 4 spec (15-bit addressing)
  */
-static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len)
+static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr_t *src_ip)
 {
     // Protocol version is not validated, for backwards compatibility. The spec requires validation for controllers, not nodes.
     
@@ -380,6 +394,42 @@ static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len)
         return;
     }
     
+    // ===== CONTROLLER DISCONNECT DETECTION =====
+    // Reset source IP tracking if we haven't received data in a while
+    // This allows switching to a new controller without power cycle
+    uint32_t now = osKernelGetTickCount();
+    if ((now - artnet_state.last_artdmx_tick) > ARTNET_DISCONNECT_TIMEOUT_MS) {
+        // Reset all source IP tracking
+        for (int i = 0; i < ARTNET_NUM_UNIVERSES; i++) {
+            ip_addr_set_zero(&artnet_state.universe_source_ip[i]);
+        }
+        ip_addr_set_zero(&artnet_state.last_artdmx_ip);
+        artnet_state.merge_mode_state = MERGE_INACTIVE;
+        artnet_state.sync_mode = false;
+    }
+    
+    // Update last ArtDmx timestamp
+    artnet_state.last_artdmx_tick = now;
+    
+    // ===== SOURCE IP TRACKING FOR ARTSYNC VALIDATION =====
+    // Per Art-Net spec: Track source IP per universe to detect merge mode
+    // and validate ArtSync packets (must come from same IP as ArtDmx)
+    
+    // Check if this universe already has a source IP assigned
+    if (!ip_addr_isany(&artnet_state.universe_source_ip[universe_idx])) {
+        // Universe has existing source - check if this is a different IP (merge mode)
+        if (!ip_addr_cmp(src_ip, &artnet_state.universe_source_ip[universe_idx])) {
+            // Different IP detected - enter merge mode
+            artnet_state.merge_mode_state = artnet_state.merge_mode_specified; // Specified by ArtAddress
+        }
+    } else {
+        // First packet for this universe - record source IP
+        ip_addr_copy(artnet_state.universe_source_ip[universe_idx], *src_ip);
+    }
+    
+    // Update last ArtDmx source IP (used for ArtSync validation)
+    ip_addr_copy(artnet_state.last_artdmx_ip, *src_ip);
+    
     // Copy DMX data to shadow buffer
     // Partial universe updates are allowed per Art-Net spec
     memcpy(shadow_buffer[universe_idx], pkt->data, dmx_len);
@@ -390,7 +440,6 @@ static void ArtDmxPacket_Handle(const ArtNet_ArtDmx_t *pkt, uint16_t len)
     // Check OpSync timeout - revert to immediate mode if sync lost
     // Art-Net spec: 4 second timeout for OpSync
     if (artnet_state.sync_mode) {
-        uint32_t now = osKernelGetTickCount();
         if ((now - artnet_state.last_sync_tick) > ARTNET_SYNC_TIMEOUT_MS) {
             artnet_state.sync_mode = false;
         }
@@ -450,15 +499,47 @@ static void ArtPollPacket_Handle(const ip_addr_t *addr, u16_t port)
 /**
  * @brief Handle incoming ArtSync packet
  * 
- * Enables sync mode and triggers immediate frame output. OpSync signals
- * that all ArtDmx packets for this frame have been received and output
- * should occur now for tear-free synchronized updates.
+ * Validates source IP against last ArtDmx packet and triggers synchronized
+ * frame output. Per Art-Net spec, ArtSync is ignored if:
+ * - Source IP doesn't match last ArtDmx packet
+ * - Port is in merge mode (receiving from multiple IPs)
+ * 
+ * When valid, enables sync mode and triggers frame output for tear-free
+ * synchronized updates across all universes.
+ * 
+ * @param src_ip Source IP address of the ArtSync packet
  * 
  * @note Runs in tcpip_thread context
  * @note Updates sync timeout tracking
  */
-static void ArtSyncPacket_Handle(void)
+static void ArtSyncPacket_Handle(const ip_addr_t *src_ip)
 {
+    // ===== ARTSYNC SOURCE IP VALIDATION =====
+    // Per Art-Net spec section on ArtSync:
+    // "In order to allow for multiple controllers on a network, a node shall
+    // compare the source IP of the ArtSync to the source IP of the most recent
+    // ArtDmx packet. The ArtSync shall be ignored if the IP addresses do not match."
+    
+    // Ignore if we haven't received any ArtDmx packets yet
+    if (ip_addr_isany(&artnet_state.last_artdmx_ip)) {
+        return;
+    }
+    
+    // Ignore if source IP doesn't match last ArtDmx packet
+    if (!ip_addr_cmp(src_ip, &artnet_state.last_artdmx_ip)) {
+        return;
+    }
+    
+    // ===== MERGE MODE HANDLING =====
+    // Per Art-Net spec:
+    // "When a port is merging multiple streams of ArtDmx from different IP
+    // addresses, ArtSync packets shall be ignored."
+    if (artnet_state.merge_mode_state) {
+        return;
+    }
+    
+    // ===== VALID ARTSYNC - ENTER SYNC MODE AND TRIGGER OUTPUT =====
+    
     // Enter sync mode (if not already in it)
     artnet_state.sync_mode = true;
     
@@ -467,10 +548,40 @@ static void ArtSyncPacket_Handle(void)
     
     // Trigger frame output immediately
     // In sync mode, we output on sync regardless of universe reception
+    // This provides tear-free synchronized updates across multiple universes
     FrameOutput_Trigger();
 }
 
 /* ========================== ArtPollReply Implementation ========================== */
+
+/**
+ * @brief Build status2 byte with dynamic DHCP status
+ * 
+ * Checks LwIP configuration and DHCP state to set status2 bits:
+ * - Bit 2: DHCP capable (1 if LWIP_DHCP enabled)
+ * - Bit 1: DHCP active (1 if current IP from DHCP)
+ * 
+ * @return status2 byte with DHCP bits set correctly
+ */
+static uint8_t ArtPollReply_BuildStatus2(void)
+{
+    uint8_t status2 = ARTNET_STATUS2_DEFAULT;
+    
+    extern struct netif gnetif;
+    
+#if LWIP_DHCP
+    status2 |= (1 << 2);
+    
+    if (dhcp_supplied_address(&gnetif)) {
+        status2 |= (1 << 1);
+    }
+#else
+    status2 &= ~(1 << 2);
+    status2 &= ~(1 << 1);
+#endif
+    
+    return status2;
+}
 
 /**
  * @brief Timer callback for delayed ArtPollReply
@@ -531,6 +642,7 @@ static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port)
     if (p == NULL) return;
     
     ArtNet_ArtPollReply_t *reply = (ArtNet_ArtPollReply_t *)p->payload;
+    // Initialize all fields to zero
     memset(reply, 0, sizeof(ArtNet_ArtPollReply_t));
     
     // Art-Net header
@@ -548,37 +660,32 @@ static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port)
     // Port number
     reply->port = ARTNET_PORT;
     
-    // Firmware version
-    reply->vers_hi = ARTNET_FIRMWARE_VER_HI;
-    reply->vers_lo = ARTNET_FIRMWARE_VER_LO;
+    // Node firmware version
+//    reply->vers_hi = ; // TODO: display the actual firmware version of this device
+//    reply->vers_lo = ;
     
     // Port-Address high bits
-    reply->net_switch = ARTNET_NET;
-    reply->sub_switch = ARTNET_SUBNET;
-    
-    // OEM code
-    reply->oem_hi = ARTNET_OEM_CODE_HI;
-    reply->oem_lo = ARTNET_OEM_CODE_LO;
-    
-    // UBEA version (0 = not supported)
-    reply->ubea_version = 0;
-    
-    // Status flags
-    reply->status1 = ARTNET_STATUS1_DEFAULT;
-    
-    // ESTA manufacturer code
-    reply->esta_man_lo = ARTNET_ESTA_MAN_LO;
-    reply->esta_man_hi = ARTNET_ESTA_MAN_HI;
+    reply->net_switch = (ARTNET_NET & 0x7F);
+    reply->sub_switch = (ARTNET_SUBNET & 0x0F);
     
     // Device names
     strncpy(reply->short_name, ARTNET_SHORT_NAME, 17);
     strncpy(reply->long_name, ARTNET_LONG_NAME, 63);
+
+    // OEM & ESTA Codes
+    reply->oem_hi = ARTNET_OEM_CODE_HI; // TODO: apply for OEM code before release
+    reply->oem_lo = ARTNET_OEM_CODE_LO;
+//    reply->esta_man_lo = ARTNET_ESTA_MAN_LO; // TODO: apply for ESTA manufacturer code
+//    reply->esta_man_hi = ARTNET_ESTA_MAN_HI;
+    
+    // Status flags
+    reply->status1 = ARTNET_STATUS1_DEFAULT; // TODO: set bits based on actual node status
     
     // Node report: "#xxxx [yyyy] zzzzz..."
     // xxxx = hex status code (0x0001 = RcPowerOk)
     // yyyy = decimal counter (rolls at 9999)
     poll_reply_counter = (poll_reply_counter + 1) % 10000;
-    memcpy(reply->node_report, "#0001 [0000] Power On OK", 25);
+    memcpy(reply->node_report, "#0001 [0000] Power On OK", 25); // TODO: make status code and message dynamic based on actual node status
     reply->node_report[7]  = '0' + (poll_reply_counter / 1000) % 10;
     reply->node_report[8]  = '0' + (poll_reply_counter / 100) % 10;
     reply->node_report[9]  = '0' + (poll_reply_counter / 10) % 10;
@@ -586,46 +693,47 @@ static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port)
     
     // Number of ports (max 4 per ArtPollReply)
     uint8_t num_ports = (ARTNET_NUM_UNIVERSES > 4) ? 4 : ARTNET_NUM_UNIVERSES;
-    reply->num_ports_hi = 0;
+//    reply->num_ports_hi = 0; // reserved by Art-Net spec for future expansion
     reply->num_ports_lo = num_ports;
     
     // Configure each output port
     for (int i = 0; i < num_ports; i++) {
-        // Port type: output capable, DMX512 protocol
+        // PortTypes
         reply->port_types[i] = ARTNET_PORT_TYPE_OUTPUT;
         
-        // Port universe address (low 4 bits of Port-Address)
+        // SwOut
+        // Bits 3-0 of the Port-Address.
         reply->sw_out[i] = (ARTNET_START_UNIVERSE + i) & 0x0F;
         
-        // Output status
+        // GoodOutputA
         uint8_t good_output = 0x00;
         if (artnet_state.universes_received & (1 << i)) {
             good_output |= 0x80;  // Bit 7: Data is being transmitted
         }
-        reply->good_output[i] = good_output;
+        if (artnet_state.merge_mode_state) {
+            good_output |= 0x08; // Bit 3: Set if merging
+            if (artnet_state.merge_mode_state == MERGE_LTP) { // TODO: Implement merging FULLY
+                good_output |= 0x02; // Bit 1: Merging in LTP mode
+            }
+        }
+        reply->good_output_a[i] = good_output;
         
-        // Additional output status (Art-Net 4)
+        // GoodOutputB
         reply->good_output_b[i] = ARTNET_GOOD_OUTPUT_B;
     }
     
     // Node style
     reply->style = ARTNET_NODE_STYLE;
     
-    // MAC address (from ETH peripheral)
-    extern ETH_HandleTypeDef heth;
-    reply->mac[0] = heth.Init.MACAddr[0];
-    reply->mac[1] = heth.Init.MACAddr[1];
-    reply->mac[2] = heth.Init.MACAddr[2];
-    reply->mac[3] = heth.Init.MACAddr[3];
-    reply->mac[4] = heth.Init.MACAddr[4];
-    reply->mac[5] = heth.Init.MACAddr[5];
+    // MAC address (from netif)
+    memcpy(reply->mac, gnetif.hwaddr, 6);
     
     // Bind IP (same as node IP for single-node)
     memcpy(reply->bind_ip, reply->ip, 4);
     reply->bind_index = 1;
     
     // Extended status flags
-    reply->status2 = ARTNET_STATUS2_DEFAULT;
+    reply->status2 = ArtPollReply_BuildStatus2();
     reply->status3 = ARTNET_STATUS3_DEFAULT;
     
     // Send unicast reply
