@@ -124,17 +124,17 @@ extern "C" {
 #define ARTNET_STATUS1_DEFAULT  0b00010000
 
 /**
- * @brief Status2 default flags
+ * @brief Status2 default flags (base value, DHCP bits set dynamically)
  * @note Bit 7: RDM via ArtAddress (0=no)
  *       Bit 6: Output style via ArtAddress (0=no)
  *       Bit 5: Squawking (0=no)
  *       Bit 4: sACN switching (0=no)
  *       Bit 3: 15-bit Port-Address support (1=yes)
- *       Bit 2: DHCP capable (1=yes)
- *       Bit 1: DHCP active (1=yes)
+ *       Bit 2: DHCP capable (dynamic - set if LWIP_DHCP enabled)
+ *       Bit 1: DHCP active (dynamic - set if IP from DHCP)
  *       Bit 0: Browser config (0=no)
  */
-#define ARTNET_STATUS2_DEFAULT  0b00001110
+#define ARTNET_STATUS2_DEFAULT  0b00001000
 
 /**
  * @brief Status3 default flags
@@ -162,8 +162,17 @@ extern "C" {
  *       Bit 6: Output style continuous (0=delta)
  *       Bit 5: Discovery not running (0=running)
  *       Bit 4: Background discovery disabled (0=enabled)
+ *       Bit 3-0: Reserved (0)
  */
-#define ARTNET_GOOD_OUTPUT_B    0x80
+#define ARTNET_GOOD_OUTPUT_B    0b11110000
+
+/**
+ * @brief Default merge mode, if not specified by ArtAddress
+ * @note MERGE_INACTIVE = no merge, single source
+ *       MERGE_HTP = Highest Takes Precedence
+ *       MERGE_LTP = Latest Takes Precedence
+ */
+#define ARTNET_MERGE_DEFAULT    MERGE_LTP
 
 #ifdef __cplusplus
 }

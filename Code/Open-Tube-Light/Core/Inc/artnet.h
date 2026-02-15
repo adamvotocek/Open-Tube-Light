@@ -19,6 +19,7 @@
 #include "artnet_protocol.h"
 #include "artnet_config.h"
 #include "cmsis_os.h"
+#include "lwip/ip_addr.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -29,6 +30,19 @@ extern "C" {
 /* ========================== Public Types ========================== */
 
 /**
+ * @brief Merge mode status
+ *
+ * Merge mode is entered when ArtDmx packets for the same universe are
+ * received from different source IPs.
+ *
+ */
+typedef enum {
+    MERGE_INACTIVE = 0, ///< No merge detected, single source
+    MERGE_HTP      = 1, ///< Highest Takes Precedence
+    MERGE_LTP      = 2, ///< Latest Takes Precedence
+} ArtNet_MergeState_t ;
+
+/**
  * @brief Art-Net operational state
  * 
  * This structure tracks the current operational mode and synchronization
@@ -36,10 +50,15 @@ extern "C" {
  * to determine if OpSync mode is active.
  */
 typedef struct {
-    bool     sync_mode;             ///< True when OpSync packets are being received
-    uint32_t last_sync_tick;        ///< Timestamp of last OpSync (for timeout detection)
-    uint8_t  universes_received;    ///< Bitmask of universes received this frame
-    uint8_t  universes_expected;    ///< Bitmask of all configured universes
+    uint8_t             universes_received;                       ///< Bitmask of universes received this frame
+    uint8_t             universes_expected;                       ///< Bitmask of all configured universes
+    ip_addr_t           universe_source_ip[ARTNET_NUM_UNIVERSES]; ///< Source IP per universe for merge detection
+    ip_addr_t           last_artdmx_ip;                           ///< Source IP of last ArtDmx packet received
+    bool                sync_mode;                                ///< True when OpSync packets are being received
+    uint32_t            last_sync_tick;                           ///< Timestamp of last OpSync (for timeout detection)
+    ArtNet_MergeState_t merge_mode_specified;                     ///< Merge mode specified by ArtAddress
+    ArtNet_MergeState_t merge_mode_state;                         ///< Either inactive or set to the specified mode
+    uint32_t            last_artdmx_tick;                         ///< Timestamp of last ArtDmx packet (for connection timeout)
 } ArtNet_State_t;
 
 /* ========================== Public API Functions ========================== */

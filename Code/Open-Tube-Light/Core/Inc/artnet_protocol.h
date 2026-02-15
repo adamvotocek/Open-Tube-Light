@@ -54,6 +54,12 @@ extern "C" {
 #define ARTNET_SYNC_TIMEOUT_MS  4000
 
 /**
+ * @brief Controller disconnect timeout (10 seconds)
+ * @note If no ArtDmx received within this time, reset source IP tracking and merge mode
+ */
+#define ARTNET_DISCONNECT_TIMEOUT_MS  10000
+
+/**
  * @brief Minimum random delay for ArtPollReply (0 ms)
  * @note Art-Net spec requires random delay between 0-1 second to avoid network congestion
  */
@@ -169,7 +175,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  num_ports_lo;  ///< Number of ports low byte (max 4 per reply)
     uint8_t  port_types[4]; ///< Port types (input/output capabilities)
     uint8_t  good_input[4]; ///< Input port status
-    uint8_t  good_output[4];///< Output port status
+    uint8_t  good_output_a[4];///< Output port status
     uint8_t  sw_in[4];      ///< Input port universe addresses
     uint8_t  sw_out[4];     ///< Output port universe addresses
     uint8_t  sw_video;      ///< Video output switch
