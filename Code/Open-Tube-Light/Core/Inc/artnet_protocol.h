@@ -154,42 +154,54 @@ typedef struct __attribute__((packed)) {
  *       Contains extensive node information including IP, ports, status, etc.
  */
 typedef struct __attribute__((packed)) {
-    uint8_t  id[8];         ///< "Art-Net\0" signature
-    uint16_t opcode;        ///< 0x2100 (little-endian)
-    uint8_t  ip[4];         ///< Node IP address
-    uint16_t port;          ///< Art-Net port (0x1936)
-    uint8_t  vers_hi;       ///< Firmware version high byte
-    uint8_t  vers_lo;       ///< Firmware version low byte
-    uint8_t  net_switch;    ///< Bits 14-8 of Port-Address
-    uint8_t  sub_switch;    ///< Bits 7-4 of Port-Address
-    uint8_t  oem_hi;        ///< OEM code high byte
-    uint8_t  oem_lo;        ///< OEM code low byte
-    uint8_t  ubea_version;  ///< UBEA version (0 if not supported)
-    uint8_t  status1;       ///< General status flags
-    uint8_t  esta_man_lo;   ///< ESTA manufacturer code low byte
-    uint8_t  esta_man_hi;   ///< ESTA manufacturer code high byte
-    char     short_name[18];///< Short name (max 17 chars + null)
-    char     long_name[64]; ///< Long name (max 63 chars + null)
+    uint8_t  id[8];          ///< "Art-Net\0" signature
+    uint16_t opcode;         ///< 0x2100 (little-endian)
+    uint8_t  ip[4];          ///< Node IP address
+    uint16_t port;           ///< Art-Net port (0x1936)
+    uint8_t  vers_hi;        ///< Firmware version high byte
+    uint8_t  vers_lo;        ///< Firmware version low byte
+    uint8_t  net_switch;     ///< Bits 14-8 of Port-Address
+    uint8_t  sub_switch;     ///< Bits 7-4 of Port-Address
+    uint8_t  oem_hi;         ///< OEM code high byte
+    uint8_t  oem_lo;         ///< OEM code low byte
+    uint8_t  ubea_version;   ///< UBEA version (0 if not supported)
+    uint8_t  status1;        ///< General status flags
+    uint8_t  esta_man_lo;    ///< ESTA manufacturer code low byte
+    uint8_t  esta_man_hi;    ///< ESTA manufacturer code high byte
+    char     short_name[18]; ///< Short name (max 17 chars + null)
+    char     long_name[64];  ///< Long name (max 63 chars + null)
     char     node_report[64];///< Status report string
-    uint8_t  num_ports_hi;  ///< Number of ports high byte
-    uint8_t  num_ports_lo;  ///< Number of ports low byte (max 4 per reply)
-    uint8_t  port_types[4]; ///< Port types (input/output capabilities)
-    uint8_t  good_input[4]; ///< Input port status
+    uint8_t  num_ports_hi;   ///< Number of ports high byte
+    uint8_t  num_ports_lo;   ///< Number of ports low byte (max 4 per reply)
+    uint8_t  port_types[4];  ///< Port types (input/output capabilities)
+    uint8_t  good_input[4];  ///< Input port status
     uint8_t  good_output_a[4];///< Output port status
-    uint8_t  sw_in[4];      ///< Input port universe addresses
-    uint8_t  sw_out[4];     ///< Output port universe addresses
-    uint8_t  sw_video;      ///< Video output switch
-    uint8_t  sw_macro;      ///< Macro key switch
-    uint8_t  sw_remote;     ///< Remote switch
-    uint8_t  spare[3];      ///< Spare bytes
-    uint8_t  style;         ///< Node style code
-    uint8_t  mac[6];        ///< MAC address
-    uint8_t  bind_ip[4];    ///< Binding IP address
-    uint8_t  bind_index;    ///< Binding index (for multi-port devices)
-    uint8_t  status2;       ///< Extended status flags
+    uint8_t  sw_in[4];       ///< Input port universe addresses
+    uint8_t  sw_out[4];      ///< Output port universe addresses
+    uint8_t  sw_video;       ///< Video output switch
+    uint8_t  sw_macro;       ///< Macro key switch
+    uint8_t  sw_remote;      ///< Remote switch
+    uint8_t  spare[3];       ///< Spare bytes
+    uint8_t  style;          ///< Node style code
+    uint8_t  mac[6];         ///< MAC address
+    uint8_t  bind_ip[4];     ///< Binding IP address
+    uint8_t  bind_index;     ///< Binding index (for multi-port devices)
+    uint8_t  status2;        ///< Extended status flags
     uint8_t  good_output_b[4];///< Additional output status (Art-Net 4)
-    uint8_t  status3;       ///< Additional status flags
-    uint8_t  filler[21];    ///< Reserved for future use
+    uint8_t  status3;        ///< Additional status flags
+    uint8_t  def_resp_UID_5; ///< RDMnet & LLRP Default Responder UID MSB
+    uint8_t  def_resp_UID_4; ///< RDMnet & LLRP Default Responder UID
+    uint8_t  def_resp_UID_3; ///< RDMnet & LLRP Default Responder UID
+    uint8_t  def_resp_UID_2; ///< RDMnet & LLRP Default Responder UID
+    uint8_t  def_resp_UID_1; ///< RDMnet & LLRP Default Responder UID
+    uint8_t  def_resp_UID_0; ///< RDMnet & LLRP Default Responder UID LSB
+    uint8_t  user_hi;        ///< Available for user specific data (high byte)
+    uint8_t  user_lo;        ///< Available for user specific data (low byte)
+    uint8_t  refresh_rate_hi;///< Max universe refresh rate high byte (Hz)
+    uint8_t  refresh_rate_lo;///< Max universe refresh rate low byte (Hz)
+    uint8_t  bgnd_queue_pol; ///< RDM background queue policy
+    uint8_t  filler[10];     ///< Filler bytes for future expansion
+
 } ArtNet_ArtPollReply_t;
 
 /**

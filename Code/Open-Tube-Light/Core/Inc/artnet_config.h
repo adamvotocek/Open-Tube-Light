@@ -49,6 +49,12 @@ extern "C" {
  */
 #define ARTNET_SUBNET           0
 
+/**
+ * @brief The maximum frequency of ArtDmx packets per universe (0-255).
+ * @note The value is in Hz. Values below 44 Hz are disregarded and treated as 44 Hz.
+ */
+#define ARTNET_MAX_REFRESH_RATE 44
+
 /* ========================== Device Identity ========================== */
 
 /**
