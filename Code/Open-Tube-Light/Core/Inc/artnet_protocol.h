@@ -218,6 +218,29 @@ typedef struct __attribute__((packed)) {
     uint8_t  aux2;          ///< Auxiliary data 2 (reserved)
 } ArtNet_ArtSync_t;
 
+/**
+ * @brief ArtAddress packet - node configuration command
+ * @note Sent by controllers to configure node settings. Fields 5 (net_switch)
+ * to 13 (command) contain the data that will be programmed into the node.
+ * The device should apply the new settings and respond with an ArtPollReply.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  id[8];           ///< "Art-Net\0" signature.
+    uint16_t opcode;          ///< 0x6000 (OpAddress).
+    uint8_t  prot_ver_hi;     ///< Protocol version high byte
+    uint8_t  prot_ver_lo;     ///< Protocol version low byte
+    uint8_t  net_switch;      ///< Top 7 bits of the 15-bit Port-Address (Bits 8-14).
+    uint8_t  bind_index;      ///< Defines the bound node. 1 = root device.
+    uint8_t  short_name[18];  ///< Max 17 chars + null. For short_name reproggraming.
+    uint8_t  long_name[64];   ///< Max 63 chars + null. For long_name reproggraming.
+    uint8_t  sw_in[4];        ///< Bits 3-0 of the 15 bit Port-Address for a given input port are here
+    uint8_t  sw_out[4];       ///< Bits 3-0 of the 15 bit Port-Address for a given input port are here
+    uint8_t  sub_switch;      ///< Middle 4 bits of the 15-bit Port-Address (Bits 4-7).
+    uint8_t  acn_priority;    ///< sACN Priority (0-200). 255 means no change.
+    uint8_t  command;         ///< Various commands for node configuration.
+
+} ArtNet_ArtAddress_t;
+
 /* ========================== Protocol Helper Macros ========================== */
 
 /**

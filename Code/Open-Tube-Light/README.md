@@ -6,6 +6,40 @@
 - Implement ArtPollReply node status reporting
 - For modes that require more than 4 universes, implement bindindex
 
+Configuration via the display and buttons will be added to this device for changing the settings. These settings must update the functionality of the device while it is running, so the code must be structured in a way that allows for this. 
+The settings must saved to flash so that they are kept if the device loses power. There needs to be a factory default device configuration that the device will start with after uploading the firmware. Also, the user will have the ability to reset the device to factory defaults. 
+These are some of the settings that should be configurable:
+
+Device name
+- long name (must be compatible with Art-Net long name)
+- short name (must be compatible with Art-Net short name)
+
+IP configuration
+- DHCP/static
+- if static: IP address, mask
+
+Pixel configuration
+- number of pixels
+- pixel control (so far we only have RGB, but later there will be options for RGBD, or 16-bit RGB, etc.)
+
+DMX protocol
+- input via either DMX or Art-Net
+- start address (and also start universe for Art-Net)
+- note: the channel count of the device is calculated by the pixel configuration 
+- note: the number of universes that Art-Net must recieve is determined by the channel count and the start address
+
+Failsafe behavior
+- hold last state/full/zero
+
+Art-Net merge mode
+- either HTP(default) or LTP
+
+
+
+
+
+
+Other settings may appear as development continues.
 
 
 ## Ethernet and LwIP Setup

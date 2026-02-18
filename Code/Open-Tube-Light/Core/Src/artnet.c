@@ -727,7 +727,7 @@ static void ArtPollReply_Send(const ip_addr_t *addr, u16_t port)
     
     // Bind IP (same as node IP for single-node)
     memcpy(reply->bind_ip, reply->ip, 4);
-    reply->bind_index = 1;
+    reply->bind_index = 1; // root device (for ports 1-4, eg. 4 universes)
     
     // Extended status flags
     reply->status2 = ArtPollReply_BuildStatus2();
