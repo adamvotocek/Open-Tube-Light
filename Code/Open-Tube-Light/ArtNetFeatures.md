@@ -2,7 +2,7 @@
 
 | OpCode Name        | Value  | Receive/Transmit | Implemented? | Reason, Citation and Description                                                                                                                                                    |
 | :----------------- | :----- | :--------------- | :----------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OpPoll**         | 0x2000 | Receive          |      ✅      | **Discovery Packet.** All entities must receive this and allow the controller to discover them. The Node must respond with an ArtPollReply.                                         |
+| **OpPoll**         | 0x2000 | Receive          |      🚧      | **Discovery Packet.** All entities must receive this and allow the controller to discover them. The Node must respond with an ArtPollReply.                                         |
 | **OpPollReply**    | 0x2100 | Transmit         |      🚧      | **Status Packet.** This contains the device status and is transmitted in response to OpPoll.                                                                                        |
 | **OpOutput/OpDmx** | 0x5000 | Receive          |      🚧      | **DMX Data.** This is the core data packet containing zero start code DMX512 information for a single Universe.                                                                     |
 | **OpSync**         | 0x5200 | Receive          | ✅, untested | **Synchronous Output.** Used to force synchronous transfer of ArtDmx packets to a node's output. Art-Net 4 nodes "should" transfer to synchronous operation when this is received.  |
