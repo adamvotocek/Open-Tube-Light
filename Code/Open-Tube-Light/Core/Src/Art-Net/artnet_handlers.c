@@ -103,11 +103,9 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
         }
     }
     
-    // In non-sync mode: trigger output when all universes received
+    // In non-sync mode: output immediately 
     if (!g_artnet_ctx.state.sync_mode) {
-        if (g_artnet_ctx.state.universes_received == g_artnet_ctx.state.universes_expected) {
-            ArtNet_TriggerFrameOutput();
-        }
+        ArtNet_TriggerFrameOutput();
     }
 }
 
