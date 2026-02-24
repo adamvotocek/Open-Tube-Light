@@ -110,7 +110,7 @@ typedef struct __attribute__((packed)) {
 } ArtNet_Header_t;
 
 /**
- * @brief ArtDmx packet (OpOutput) - carries DMX512 data
+ * @brief ArtDmx packet (OpOutput/OpDmx) - carries DMX512 data
  * @note This is the main packet type for lighting data transmission
  */
 typedef struct __attribute__((packed)) {

@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 // Public configuration - adjust as needed
-#define SK9822_STRIP_LED_COUNT 144U
+#define SK9822_STRIP_LED_COUNT 288
 
 // SK9822 frame sizing
 #define SK9822_START_FRAME_SIZE 4U
