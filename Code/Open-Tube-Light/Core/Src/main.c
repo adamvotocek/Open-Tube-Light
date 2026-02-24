@@ -23,8 +23,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "sk9822.h"
-#include "artnet.h"
+#include "SK9822/sk9822.h"
+#include "device_config.h"
+#include "Art-Net/artnet.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -380,7 +381,10 @@ void StartDefaultTask(void *argument)
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
   
-  // Initialize Art-Net after LwIP is ready
+  // Initialize device configuration (loads from flash or uses factory defaults)
+  DeviceConfig_Init();
+  
+  // Initialize Art-Net after LwIP and config are ready
   // Pass the EffectTask handle so it can be notified on new data
   ArtNet_Init(EffectTaskHandle);
   
@@ -404,7 +408,7 @@ void StartDefaultTask(void *argument)
 void StartEffectTask(void *argument)
 {
   /* USER CODE BEGIN StartEffectTask */
-  // Wait a bit for Art-Net to initialize
+  // Wait for initialization to complete
   osDelay(100);
   
   /* Infinite loop */
@@ -429,7 +433,8 @@ void StartEffectTask(void *argument)
       // Convert Art-Net DMX data to SK9822 format
       // Each LED uses 3 bytes (RGB) from DMX data
       uint16_t led_idx = 0;
-      for (uint8_t uni = 0; uni < ARTNET_NUM_UNIVERSES && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
+      uint8_t num_universes = DeviceConfig_GetUniverseCount();
+      for (uint8_t uni = 0; uni < num_universes && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
         const uint8_t *dmx = ArtNet_GetUniverseData(uni);
         if (dmx == NULL) continue;
         

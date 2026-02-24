@@ -5,7 +5,7 @@
  *      Author: popvo
  */
 
-#include <sk9822.h>
+#include "SK9822/sk9822.h"
 #include "main.h"
 #include <string.h>
 
