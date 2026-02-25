@@ -431,15 +431,25 @@ void StartEffectTask(void *argument)
       sk9822_prepare_frames(&hsk9822);
       
       // Convert Art-Net DMX data to SK9822 format
-      // Each LED uses 3 bytes (RGB) from DMX data
+      // dmx_start_address (1-based) sets where our pixel data begins
+      // within the first universe. Subsequent universes start at ch 0.
+      const DeviceConfig_t *config = DeviceConfig_Get();
+      uint8_t cpp = DeviceConfig_GetChannelsPerPixel();
       uint16_t led_idx = 0;
       uint8_t num_universes = DeviceConfig_GetUniverseCount();
+      
       for (uint8_t uni = 0; uni < num_universes && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
         const uint8_t *dmx = ArtNet_GetUniverseData(uni);
         if (dmx == NULL) continue;
         
-        // 170 LEDs per universe (170 * 3 = 510 bytes)
-        for (uint16_t ch = 0; ch < 510 && led_idx < SK9822_STRIP_LED_COUNT; ch += 3) {
+        // First universe: skip to dmx_start_address offset.
+        // Subsequent universes: pixel data starts at channel 0.
+        uint16_t ch = (uni == 0) ? (config->dmx.dmx_start_address - 1) : 0;
+        
+        // Read pixels until universe boundary or strip is full.
+        // Ensure a full pixel (cpp channels) fits before reading.
+        for (; (ch + cpp) <= ARTNET_DMX_MAX_LENGTH && led_idx < SK9822_STRIP_LED_COUNT; ch += cpp) {
+          // TODO: handle RGBW and RGB16 formats (currently RGB only)
           sk9822_set_led(&hsk9822, led_idx, dmx[ch], dmx[ch + 1], dmx[ch + 2], 255);
           led_idx++;
         }
