@@ -40,26 +40,28 @@ void ArtNet_PollReplyTimerCallback(void *arg)
 {
     (void)arg;
     
-    if (g_artnet_ctx.pending_reply.is_pending) {
+    if (g_artnet_ctx.reply_queue.count > 0) {
         // Schedule send in LwIP's tcpip_thread context
         tcpip_callback(ArtNet_PollReplySendCallback, NULL);
     }
 }
 
 /**
- * @brief Send ArtPollReply from tcpip_thread context
+ * @brief Send queued ArtPollReply packets from tcpip_thread context
  * 
- * Called via tcpip_callback from timer callback.
+ * Called via tcpip_callback from timer callback. Iterates all queued
+ * destinations and sends a unicast reply to each, then clears the queue.
  */
 void ArtNet_PollReplySendCallback(void *arg)
 {
     (void)arg;
     
-    if (g_artnet_ctx.pending_reply.is_pending) {
-        ArtNet_SendPollReply(&g_artnet_ctx.pending_reply.addr, 
-                             g_artnet_ctx.pending_reply.port);
-        g_artnet_ctx.pending_reply.is_pending = false;
+    ArtNet_PollReplyQueue_t *q = &g_artnet_ctx.reply_queue;
+    
+    for (uint8_t i = 0; i < q->count; i++) {
+        ArtNet_SendPollReply(&q->entries[i].addr, q->entries[i].port);
     }
+    q->count = 0;
 }
 
 /* ========================== Status Helpers ========================== */

@@ -28,19 +28,30 @@ extern "C" {
 /** @brief Thread notification flag for new DMX frame ready */
 #define ARTNET_THREAD_FLAG_FRAME_READY  0x01
 
+/** @brief Max queued ArtPollReply destinations (supports multiple controllers) */
+#define ARTNET_MAX_PENDING_REPLIES  4
+
 /* ========================== Internal Types ========================== */
 
 /**
- * @brief Pending ArtPollReply request
- * 
- * Art-Net spec requires random delay (0-1s) before sending ArtPollReply
- * to prevent network congestion when many nodes respond to a broadcast poll.
+ * @brief Single ArtPollReply destination
  */
 typedef struct {
     ip_addr_t addr;         ///< Destination IP address for reply
     u16_t     port;         ///< Destination UDP port for reply
-    bool      is_pending;   ///< True if a reply is queued
-} ArtNet_PollReplyRequest_t;
+} ArtNet_PollReplyDest_t;
+
+/**
+ * @brief Queue of pending ArtPollReply destinations
+ * 
+ * Art-Net spec requires random delay (0-1s) before sending ArtPollReply.
+ * Multiple controllers may poll during that window; this queue ensures
+ * each receives a unicast reply. Entries are deduplicated by IP.
+ */
+typedef struct {
+    ArtNet_PollReplyDest_t entries[ARTNET_MAX_PENDING_REPLIES];
+    uint8_t count;          ///< Number of valid entries (0 = no reply pending)
+} ArtNet_PollReplyQueue_t;
 
 /**
  * @brief Art-Net module internal context
@@ -61,7 +72,7 @@ typedef struct {
     
     // ArtPollReply
     osTimerId_t poll_reply_timer;           ///< Timer for delayed reply
-    ArtNet_PollReplyRequest_t pending_reply;///< Pending reply destination
+    ArtNet_PollReplyQueue_t reply_queue;    ///< Queued reply destinations
     uint16_t poll_reply_counter;            ///< Status report counter
     
     // PRNG state
