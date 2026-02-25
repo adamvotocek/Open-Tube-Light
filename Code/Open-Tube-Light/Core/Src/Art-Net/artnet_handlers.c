@@ -91,8 +91,10 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     // Update per-universe timestamp
     uni->last_dmx_tick = now;
     
-    // Copy DMX data to shadow buffer
+    // Copy DMX data to shadow buffer (mutex guards against torn latch reads)
+    osMutexAcquire(g_artnet_ctx.shadow_mutex, osWaitForever);
     memcpy(g_artnet_shadow_buffer[universe_idx], pkt->data, dmx_len);
+    osMutexRelease(g_artnet_ctx.shadow_mutex);
     
     // ===== PER-UNIVERSE SYNC TIMEOUT =====
     // Art-Net spec: revert to non-sync if no ArtSync for 4 seconds

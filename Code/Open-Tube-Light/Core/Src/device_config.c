@@ -64,7 +64,7 @@ static const DeviceConfig_t factory_defaults = {
     
     .dmx = {
         .input_source = DMX_INPUT_ARTNET,
-        .dmx_start_address = 501,
+        .dmx_start_address = 1,
         .artnet_net = 0,
         .artnet_subnet = 0,
         .artnet_start_universe = 1,
