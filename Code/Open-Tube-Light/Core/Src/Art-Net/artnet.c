@@ -2,12 +2,8 @@
  * @file artnet.c
  * @brief Art-Net 4 Protocol Handler - Core Module
  * 
- * This module provides the core Art-Net functionality:
- * - Initialization and shutdown
- * - Public API (data access, state queries)
- * - UDP receive callback and packet dispatch
- * - Buffer management (double-buffering)
- * - Shared state for other Art-Net modules
+ * Core Art-Net functionality: initialization, public API (data access),
+ * UDP receive callback, packet dispatch, and buffer management.
  * 
  * Packet-specific handling is delegated to:
  * - artnet_handlers.c: ArtDmx, ArtPoll, ArtSync, ArtAddress handlers
@@ -23,31 +19,24 @@
 #include "cmsis_os.h"
 #include <string.h>
 
-/* ========================== Shared State (accessible to other Art-Net modules) ========================== */
+/* ========================== Shared State ========================== */
 
-/**
- * @brief Global Art-Net context
- * Contains all internal state, accessible to all Art-Net modules
- */
 ArtNet_Context_t g_artnet_ctx = {0};
 
 /**
  * @brief Shadow buffers for incoming DMX data
  * 
- * Incoming Art-Net packets write to these buffers. Data remains here until
- * ArtNet_LatchData() is called, which atomically copies to active_buffer.
- * 
- * Memory placement: Use linker section .DMX_Buffers to place in fast RAM.
- * Alignment: 32-byte aligned for optimal memory access patterns.
+ * Incoming ArtDmx packets write here. Data moves to active_buffer
+ * when ArtNet_LatchData() is called by the processing task.
+ * Placed in DTCM (.DMX_Buffers) for fast CPU access.
  */
 uint8_t g_artnet_shadow_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /**
- * @brief Active buffers for DMX data rendering
+ * @brief Active buffers read by the processing task during rendering
  * 
- * Processing task reads from these buffers during rendering. The double-
- * buffering ensures stable data throughout the render cycle.
+ * Double-buffering ensures stable data throughout the render cycle.
  */
 uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
     __attribute__((section(".DMX_Buffers"), aligned(32)));
@@ -62,32 +51,18 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
 int ArtNet_Init(osThreadId_t processing_task_handle)
 {
     if (g_artnet_ctx.initialized) {
-        return 0;  // Already initialized
+        return 0;
     }
     
-    // Store processing task handle
     g_artnet_ctx.processing_task = processing_task_handle;
     
-    // Initialize state structure
-    memset(&g_artnet_ctx.state, 0, sizeof(ArtNet_State_t));
-    
-    // Calculate expected universes from device config
-    uint8_t num_universes = DeviceConfig_GetUniverseCount();
-    g_artnet_ctx.state.universes_expected = (1 << num_universes) - 1;
-    
-    // Initialize per-universe state: no source assigned, non-sync mode
-    for (int i = 0; i < DEVICE_CONFIG_MAX_UNIVERSES; i++) {
-        ip_addr_set_zero(&g_artnet_ctx.state.universes[i].source_ip);
-        g_artnet_ctx.state.universes[i].last_dmx_tick = 0;
-        g_artnet_ctx.state.universes[i].sync_mode = false;
-        g_artnet_ctx.state.universes[i].last_sync_tick = 0;
-    }
-
-    // Clear DMX buffers to zero (lights off)
+    // Zero-init clears all per-universe state (source_ip = 0.0.0.0,
+    // sync_mode = false, ticks = 0) and DMX buffers (lights off).
+    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
     memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
     memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
     
-    // Initialize poll reply state
+    // ArtPollReply state
     memset(&g_artnet_ctx.pending_reply, 0, sizeof(ArtNet_PollReplyRequest_t));
     g_artnet_ctx.poll_reply_counter = 0;
     
@@ -100,13 +75,12 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
         return -1;
     }
     
-    // Create UDP protocol control block
+    // Create UDP protocol control block and bind to Art-Net port
     g_artnet_ctx.pcb = udp_new();
     if (g_artnet_ctx.pcb == NULL) {
         return -1;
     }
     
-    // Bind to Art-Net port (6454 / 0x1936)
     err_t err = udp_bind(g_artnet_ctx.pcb, IP_ADDR_ANY, ARTNET_PORT);
     if (err != ERR_OK) {
         udp_remove(g_artnet_ctx.pcb);
@@ -114,7 +88,7 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
         return -1;
     }
     
-    // Set receive callback (runs in tcpip_thread context)
+    // Receive callback runs in tcpip_thread context
     udp_recv(g_artnet_ctx.pcb, ArtNet_UdpReceiveCallback, NULL);
     
     g_artnet_ctx.initialized = true;
@@ -123,34 +97,18 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
 
 const uint8_t* ArtNet_GetUniverseData(uint8_t universe)
 {
-    uint8_t num_universes = DeviceConfig_GetUniverseCount();
-    if (universe >= num_universes) {
+    if (universe >= DeviceConfig_GetUniverseCount()) {
         return NULL;
     }
     return g_artnet_active_buffer[universe];
-}
-
-bool ArtNet_IsFrameReady(void)
-{
-    return g_artnet_ctx.frame_ready;
 }
 
 void ArtNet_LatchData(void)
 {
     uint8_t num_universes = DeviceConfig_GetUniverseCount();
     
-    // Atomic copy from shadow to active buffers
     memcpy(g_artnet_active_buffer, g_artnet_shadow_buffer, 
            num_universes * ARTNET_DMX_MAX_LENGTH);
-    
-    // Clear frame ready flag and universe reception bitmask
-    g_artnet_ctx.frame_ready = false;
-    g_artnet_ctx.state.universes_received = 0;
-}
-
-const ArtNet_State_t* ArtNet_GetState(void)
-{
-    return &g_artnet_ctx.state;
 }
 
 /* ========================== Network Layer Implementation ========================== */
@@ -158,8 +116,8 @@ const ArtNet_State_t* ArtNet_GetState(void)
 /**
  * @brief UDP receive callback for Art-Net packets
  * 
- * Called by LwIP in tcpip_thread context when Art-Net packets arrive.
- * Validates header and dispatches to appropriate packet handler.
+ * Called by LwIP in tcpip_thread context. Validates header, extracts
+ * opcode, and dispatches to the appropriate packet handler.
  */
 static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                                        const ip_addr_t *addr, u16_t port)
@@ -204,7 +162,6 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             break;
             
         default:
-            // Ignore unknown opcodes (Art-Net spec allows this)
             break;
     }
     
@@ -216,13 +173,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
 bool ArtNet_ValidateHeader(const uint8_t *data, uint16_t len)
 {
     if (len < 10) return false;
-    
-    // Check "Art-Net\0" signature (8 bytes)
-    if (memcmp(data, ARTNET_ID, 8) != 0) {
-        return false;
-    }
-    
-    return true;
+    return (memcmp(data, ARTNET_ID, 8) == 0);
 }
 
 uint32_t ArtNet_PrngNext(void)
@@ -237,9 +188,7 @@ uint32_t ArtNet_PrngNext(void)
 
 void ArtNet_TriggerFrameOutput(void)
 {
-    g_artnet_ctx.frame_ready = true;
-    
-    // Notify processing task
+	// Notify processing task
     if (g_artnet_ctx.processing_task != NULL) {
         osThreadFlagsSet(g_artnet_ctx.processing_task, ARTNET_THREAD_FLAG_FRAME_READY);
     }

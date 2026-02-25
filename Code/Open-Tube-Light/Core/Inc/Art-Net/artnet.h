@@ -2,15 +2,9 @@
  * @file artnet.h
  * @brief Art-Net 4 Protocol Handler for STM32H7 - Public API
  * 
- * This is the main public interface for the Art-Net implementation.
- * It provides functions for initialization, data access, and state monitoring.
- * 
- * The implementation supports Art-Net 4 with OpSync for tear-free LED updates
- * across multiple universes. It uses double-buffering (shadow/active) to
- * ensure atomic updates during LED refresh.
- * 
- * Configuration is provided by the device_config module, allowing runtime
- * changes to Art-Net addressing and behavior.
+ * Public interface for the Art-Net implementation. Supports Art-Net 4 with
+ * per-universe OpSync for tear-free LED updates in multi-controller
+ * environments. Uses double-buffering (shadow/active) for atomic updates.
  * 
  * @see artnet_protocol.h for Art-Net protocol structures and constants
  * @see device_config.h for configuration management
@@ -47,20 +41,6 @@ typedef struct {
     uint32_t   last_sync_tick;  ///< Timestamp of last ArtSync from this universe's controller
 } ArtNet_UniverseState_t;
 
-/**
- * @brief Art-Net operational state
- * 
- * This structure tracks the current operational mode and synchronization
- * state of the Art-Net receiver. Per-universe state enables multi-controller
- * environments where different controllers can independently drive and
- * synchronize different subsets of universes.
- */
-typedef struct {
-    uint8_t                universes_received;                       ///< Bitmask of universes received since last latch
-    uint8_t                universes_expected;                       ///< Bitmask of all configured universes
-    ArtNet_UniverseState_t universes[DEVICE_CONFIG_MAX_UNIVERSES];   ///< Per-universe state (source IP, sync, timing)
-} ArtNet_State_t;
-
 /* ========================== Public API Functions ========================== */
 
 /**
@@ -83,31 +63,18 @@ int ArtNet_Init(osThreadId_t processing_task_handle);
  * @param universe Universe index (0 to configured universe count - 1)
  * @return Pointer to 512-byte DMX buffer, or NULL if universe index invalid
  * 
- * @note Buffer is read-only
+ * @note Buffer is read-only and stable until the next ArtNet_LatchData() call
  */
 const uint8_t* ArtNet_GetUniverseData(uint8_t universe);
 
 /**
- * @brief Check if a new frame is ready for processing
- * 
- * @return true if new data is ready, false otherwise
- */
-bool ArtNet_IsFrameReady(void);
-
-/**
  * @brief Latch shadow buffer to active buffer
  * 
- * Atomically copies all shadow buffers to active buffers.
- * Call from processing task when ArtNet_IsFrameReady() returns true.
+ * Copies all shadow buffers to active buffers so the rendering task
+ * sees a coherent snapshot. Call from the processing task after being
+ * notified via thread flags.
  */
 void ArtNet_LatchData(void);
-
-/**
- * @brief Get current Art-Net operational state
- * 
- * @return Pointer to const state structure
- */
-const ArtNet_State_t* ArtNet_GetState(void);
 
 #ifdef __cplusplus
 }

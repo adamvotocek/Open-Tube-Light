@@ -2,10 +2,10 @@
  * @file artnet_handlers.c
  * @brief Art-Net Packet Handlers
  * 
- * This module implements handlers for incoming Art-Net packets:
- * - ArtDmx: DMX data reception with sequence tracking
+ * Handlers for incoming Art-Net packets:
+ * - ArtDmx: DMX data reception with per-universe source tracking
  * - ArtPoll: Discovery request handling
- * - ArtSync: Frame synchronization
+ * - ArtSync: Per-universe frame synchronization
  * - ArtAddress: Remote configuration (future)
  * 
  * All handlers run in LwIP tcpip_thread context.
@@ -63,12 +63,12 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     }
     
     uint32_t now = osKernelGetTickCount();
-    ArtNet_UniverseState_t *uni = &g_artnet_ctx.state.universes[universe_idx];
+    ArtNet_UniverseState_t *uni = &g_artnet_ctx.universes[universe_idx];
     
     // ===== CONTROLLER DISCONNECT DETECTION =====
     // Check all universes for stale source IPs
     for (int i = 0; i < num_universes; i++) {
-        ArtNet_UniverseState_t *u = &g_artnet_ctx.state.universes[i];
+        ArtNet_UniverseState_t *u = &g_artnet_ctx.universes[i];
         if (!ip_addr_isany(&u->source_ip) &&
             (now - u->last_dmx_tick) > ARTNET_DISCONNECT_TIMEOUT_MS) {
             ip_addr_set_zero(&u->source_ip);
@@ -93,9 +93,6 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     
     // Copy DMX data to shadow buffer
     memcpy(g_artnet_shadow_buffer[universe_idx], pkt->data, dmx_len);
-    
-    // Mark this universe as received
-    g_artnet_ctx.state.universes_received |= (1 << universe_idx);
     
     // ===== PER-UNIVERSE SYNC TIMEOUT =====
     // Art-Net spec: revert to non-sync if no ArtSync for 4 seconds
@@ -174,7 +171,7 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip)
     //        IP of the most recent ArtDmx packet."
     // We apply this per-universe to support multi-controller environments.
     for (int i = 0; i < num_universes; i++) {
-        ArtNet_UniverseState_t *uni = &g_artnet_ctx.state.universes[i];
+        ArtNet_UniverseState_t *uni = &g_artnet_ctx.universes[i];
         
         // Skip universes with no source assigned
         if (ip_addr_isany(&uni->source_ip)) {
