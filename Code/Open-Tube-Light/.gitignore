@@ -1,59 +1,20 @@
-#settings
-.settings/
+# ── CMake build output ────────────────────────────────────────────────
+build/
 
-#metadata
-.metadata/
-
-#Debug
-/Debug/
+# ── Legacy STM32CubeIDE Makefile build (safe to delete entirely) ─────
 Debug/
-debug/
 Release/
-release
 
-# Prerequisites
-*.d
+# ── Eclipse / STM32CubeIDE metadata (no longer primary with CMake) ───
+.settings/
+.metadata/
+.cproject
+.project
+.mxproject
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# ── Reference PDFs (large binaries, not source) ─────────────────────
+*.pdf
 
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-*.bin
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-/um1713-developing-applications-on-stm32cube-with-lwip-tcpip-stack-stmicroelectronics.pdf
-/UM2217-6_H7_HALs_and_LLs.pdf
-/art-net.pdf
-/artnetSpecification.md
-/dmx512-A.md
-/ArtNet_Audit.md
+# ── OS / editor junk ────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
