@@ -2,11 +2,10 @@
  * @file artnet_internal.h
  * @brief Art-Net Internal Module Interface
  * 
- * This header provides internal types, state, and function declarations
- * shared between Art-Net implementation modules. Not part of the public API.
+ * Shared types, state, and function declarations used across Art-Net
+ * implementation modules (artnet.c, artnet_handlers.c, artnet_pollreply.c).
  * 
- * @note This file should only be included by artnet_*.c implementation files
- * @note Do not include this in application code - use artnet.h instead
+ * @note Only include from artnet_*.c files — use artnet.h for application code.
  */
 
 #ifndef INC_ARTNET_INTERNAL_H_
@@ -50,9 +49,8 @@ typedef struct {
  * This structure consolidates previously scattered global variables.
  */
 typedef struct {
-    // State management
-    ArtNet_State_t state;                   ///< Current operational state
-    volatile bool frame_ready;              ///< Frame ready for latching
+    // Per-universe state (source tracking, sync, timing)
+    ArtNet_UniverseState_t universes[DEVICE_CONFIG_MAX_UNIVERSES];
     
     // Network layer
     struct udp_pcb *pcb;                    ///< UDP protocol control block
@@ -72,55 +70,34 @@ typedef struct {
 
 /* ========================== Shared State (defined in artnet.c) ========================== */
 
-/**
- * @brief Global Art-Net context
- * Defined in artnet.c, accessible to all Art-Net modules
- */
+/** @brief Global Art-Net context */
 extern ArtNet_Context_t g_artnet_ctx;
 
-/**
- * @brief Shadow DMX buffers for incoming data
- * Defined in artnet.c, accessible to packet handlers
- */
+/** @brief Shadow DMX buffers for incoming data */
 extern uint8_t g_artnet_shadow_buffer[][ARTNET_DMX_MAX_LENGTH];
 
-/**
- * @brief Active DMX buffers for rendering
- * Defined in artnet.c, accessible to public API
- */
+/** @brief Active DMX buffers for rendering */
 extern uint8_t g_artnet_active_buffer[][ARTNET_DMX_MAX_LENGTH];
 
 /* ========================== Internal Functions - Packet Handlers ========================== */
 
 /**
  * @brief Handle incoming ArtDmx (OpOutput) packet
- * 
- * @param pkt Pointer to ArtDmx packet structure
- * @param len Total packet length
- * @param src_ip Source IP address
  */
 void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr_t *src_ip);
 
 /**
  * @brief Handle incoming ArtPoll packet
- * 
- * @param addr Source IP address (destination for reply)
- * @param port Source UDP port (destination for reply)
  */
 void ArtNet_HandleArtPoll(const ip_addr_t *src_ip, u16_t src_port);
 
 /**
  * @brief Handle incoming ArtSync packet
- * 
- * @param src_ip Source IP address
  */
 void ArtNet_HandleArtSync(const ip_addr_t *src_ip);
 
 /**
  * @brief Handle incoming ArtAddress packet
- * 
- * @param pkt Pointer to ArtAddress packet structure
- * @param len Total packet length
  */
 void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len);
 
@@ -128,53 +105,30 @@ void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len);
 
 /**
  * @brief Send ArtPollReply packet
- * 
- * @param addr Destination IP address
- * @param port Destination UDP port
- * 
  * @note Must be called from tcpip_thread context
  */
 void ArtNet_SendPollReply(const ip_addr_t *src_ip, u16_t src_port);
 
-/**
- * @brief Timer callback for delayed ArtPollReply
- * 
- * @param arg Timer callback argument (unused)
- */
+/** @brief Timer callback for delayed ArtPollReply */
 void ArtNet_PollReplyTimerCallback(void *arg);
 
-/**
- * @brief Send ArtPollReply from tcpip_thread context
- * 
- * @param arg Callback argument (unused)
- */
+/** @brief Send ArtPollReply from tcpip_thread context (via tcpip_callback) */
 void ArtNet_PollReplySendCallback(void *arg);
 
 /* ========================== Internal Functions - Utilities ========================== */
 
-/**
- * @brief Validate Art-Net packet header
- * 
- * @param data Packet data buffer
- * @param len Packet length
- * @return true if valid Art-Net header, false otherwise
- */
+/** @brief Validate Art-Net packet header ("Art-Net\0" signature) */
 bool ArtNet_ValidateHeader(const uint8_t *data, uint16_t len);
 
-/**
- * @brief Get next pseudo-random number
- * 
- * @return Pseudo-random 32-bit value
- */
+/** @brief Get next XorShift pseudo-random number */
 uint32_t ArtNet_PrngNext(void);
 
 /**
- * @brief Trigger frame output to processing task
+ * @brief Notify the processing task that new data is available
  * 
- * Sets frame_ready flag and notifies processing task.
+ * Sets the ARTNET_THREAD_FLAG_FRAME_READY thread flag on the processing task.
  */
 void ArtNet_TriggerFrameOutput(void);
-
 
 #ifdef __cplusplus
 }

@@ -229,7 +229,7 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
         // Use per-universe source_ip to determine if a controller is actively
         // driving this universe 
         uint8_t good_output = 0x00;
-        if (!ip_addr_isany(&g_artnet_ctx.state.universes[i].source_ip)) {
+        if (!ip_addr_isany(&g_artnet_ctx.universes[i].source_ip)) {
             good_output |= 0x80;  // Bit 7: Data being transmitted
         }
         reply->good_output_a[i] = good_output;
