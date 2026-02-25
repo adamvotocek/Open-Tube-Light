@@ -64,7 +64,7 @@ static const DeviceConfig_t factory_defaults = {
     
     .dmx = {
         .input_source = DMX_INPUT_ARTNET,
-        .dmx_start_address = 1,
+        .dmx_start_address = 501,
         .artnet_net = 0,
         .artnet_subnet = 0,
         .artnet_start_universe = 1,
@@ -126,24 +126,19 @@ const DeviceConfig_t* DeviceConfig_Get(void)
     return &active_config;
 }
 
+uint8_t DeviceConfig_GetChannelsPerPixel(void)
+{
+    switch (active_config.pixel.pixel_format) {
+        case PIXEL_FORMAT_RGBW:  return 4;
+        case PIXEL_FORMAT_RGB16: return 6;
+        case PIXEL_FORMAT_RGB:
+        default:                 return 3;
+    }
+}
+
 uint16_t DeviceConfig_GetChannelCount(void)
 {
-    uint16_t channels_per_pixel;
-    
-    switch (active_config.pixel.pixel_format) {
-        case PIXEL_FORMAT_RGBW:
-            channels_per_pixel = 4;
-            break;
-        case PIXEL_FORMAT_RGB16:
-            channels_per_pixel = 6;
-            break;
-        case PIXEL_FORMAT_RGB:
-        default:
-            channels_per_pixel = 3;
-            break;
-    }
-    
-    return active_config.pixel.pixel_count * channels_per_pixel;
+    return active_config.pixel.pixel_count * DeviceConfig_GetChannelsPerPixel();
 }
 
 uint8_t DeviceConfig_GetUniverseCount(void)

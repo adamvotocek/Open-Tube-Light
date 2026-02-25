@@ -204,6 +204,15 @@ const DeviceConfig_t* DeviceConfig_Get(void);
 uint16_t DeviceConfig_GetChannelCount(void);
 
 /**
+ * @brief Get number of DMX channels consumed per pixel
+ * 
+ * Determined by pixel_format: RGB=3, RGBW=4, RGB16=6.
+ * 
+ * @return Channels per pixel (3, 4, or 6)
+ */
+uint8_t DeviceConfig_GetChannelsPerPixel(void);
+
+/**
  * @brief Get calculated number of Art-Net universes needed
  * 
  * Calculates universes needed based on channel count and start address.
