@@ -33,20 +33,32 @@ extern "C" {
 /* ========================== Public Types ========================== */
 
 /**
+ * @brief Per-universe Art-Net state
+ * 
+ * Each universe independently tracks its source controller, timing, and
+ * sync mode. This enables multi-controller operation where different
+ * controllers drive different universes on the same node, each with
+ * independent sync behavior.
+ */
+typedef struct {
+    ip_addr_t  source_ip;       ///< Source controller IP (0.0.0.0 = unassigned, first-source-wins)
+    uint32_t   last_dmx_tick;   ///< Timestamp of last ArtDmx for disconnect detection
+    bool       sync_mode;       ///< True when this universe's controller is sending ArtSync
+    uint32_t   last_sync_tick;  ///< Timestamp of last ArtSync from this universe's controller
+} ArtNet_UniverseState_t;
+
+/**
  * @brief Art-Net operational state
  * 
  * This structure tracks the current operational mode and synchronization
- * state of the Art-Net receiver. Used for diagnostics and to determine
- * if OpSync mode is active.
+ * state of the Art-Net receiver. Per-universe state enables multi-controller
+ * environments where different controllers can independently drive and
+ * synchronize different subsets of universes.
  */
 typedef struct {
-    uint8_t             universes_received;                               ///< Bitmask of universes received this frame
-    uint8_t             universes_expected;                               ///< Bitmask of all configured universes
-    ip_addr_t           universe_source_ip[DEVICE_CONFIG_MAX_UNIVERSES];  ///< Source IP per universe (first source wins)
-    ip_addr_t           last_artdmx_ip;                                   ///< Source IP of last ArtDmx packet
-    bool                sync_mode;                                        ///< True when OpSync packets are being received
-    uint32_t            last_sync_tick;                                   ///< Timestamp of last OpSync
-    uint32_t            last_artdmx_tick;                                 ///< Timestamp of last ArtDmx packet
+    uint8_t                universes_received;                       ///< Bitmask of universes received since last latch
+    uint8_t                universes_expected;                       ///< Bitmask of all configured universes
+    ArtNet_UniverseState_t universes[DEVICE_CONFIG_MAX_UNIVERSES];   ///< Per-universe state (source IP, sync, timing)
 } ArtNet_State_t;
 
 /* ========================== Public API Functions ========================== */

@@ -75,11 +75,13 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     uint8_t num_universes = DeviceConfig_GetUniverseCount();
     g_artnet_ctx.state.universes_expected = (1 << num_universes) - 1;
     
-    // Initialize all universe source IPs to "any" (0.0.0.0)
+    // Initialize per-universe state: no source assigned, non-sync mode
     for (int i = 0; i < DEVICE_CONFIG_MAX_UNIVERSES; i++) {
-        ip_addr_set_zero(&g_artnet_ctx.state.universe_source_ip[i]);
+        ip_addr_set_zero(&g_artnet_ctx.state.universes[i].source_ip);
+        g_artnet_ctx.state.universes[i].last_dmx_tick = 0;
+        g_artnet_ctx.state.universes[i].sync_mode = false;
+        g_artnet_ctx.state.universes[i].last_sync_tick = 0;
     }
-    ip_addr_set_zero(&g_artnet_ctx.state.last_artdmx_ip);
 
     // Clear DMX buffers to zero (lights off)
     memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
