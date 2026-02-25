@@ -24,8 +24,10 @@
  * shadow buffer. Implements first-source-wins per universe with timeout
  * to allow controller changes.
  * 
- * In non-sync mode, triggers output when all universes received.
- * In sync mode, the output is triggered from ArtSync handler.
+ * Per-universe state tracking enables multi-controller operation:
+ * each universe independently tracks its source IP, disconnect timeout,
+ * and sync mode. In non-sync mode, output is triggered immediately
+ * per Art-Net spec. In sync mode, output waits for ArtSync.
  */
 void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr_t *src_ip)
 {
@@ -60,35 +62,34 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
         return;
     }
     
-    // ===== CONTROLLER DISCONNECT DETECTION =====
-    // Reset source IP tracking if no data received recently
     uint32_t now = osKernelGetTickCount();
-    if ((now - g_artnet_ctx.state.last_artdmx_tick) > ARTNET_DISCONNECT_TIMEOUT_MS) {
-        for (int i = 0; i < DEVICE_CONFIG_MAX_UNIVERSES; i++) {
-            ip_addr_set_zero(&g_artnet_ctx.state.universe_source_ip[i]);
-        }
-        ip_addr_set_zero(&g_artnet_ctx.state.last_artdmx_ip);
-        g_artnet_ctx.state.sync_mode = false;
-    }
+    ArtNet_UniverseState_t *uni = &g_artnet_ctx.state.universes[universe_idx];
     
-    // Update last ArtDmx timestamp
-    g_artnet_ctx.state.last_artdmx_tick = now;
+    // ===== CONTROLLER DISCONNECT DETECTION =====
+    // Check all universes for stale source IPs
+    for (int i = 0; i < num_universes; i++) {
+        ArtNet_UniverseState_t *u = &g_artnet_ctx.state.universes[i];
+        if (!ip_addr_isany(&u->source_ip) &&
+            (now - u->last_dmx_tick) > ARTNET_DISCONNECT_TIMEOUT_MS) {
+            ip_addr_set_zero(&u->source_ip);
+            u->sync_mode = false;
+        }
+    }
     
     // ===== UNIVERSE SOURCE IP VALIDATION =====
     // Check if this universe already has a source IP assigned
-    if (!ip_addr_isany(&g_artnet_ctx.state.universe_source_ip[universe_idx])) {
-        // Universe has existing source - ignore packets from other sources
-        if (!ip_addr_cmp(src_ip, &g_artnet_ctx.state.universe_source_ip[universe_idx])) {
-            // Different IP detected - ignore this packet (no merge support)
+    if (!ip_addr_isany(&uni->source_ip)) {
+        if (!ip_addr_cmp(src_ip, &uni->source_ip)) {
+        	// Different IP detected - ignore this packet (no merge support)
             return;
         }
     } else {
-        // First packet for this universe - record source IP
-        ip_addr_copy(g_artnet_ctx.state.universe_source_ip[universe_idx], *src_ip);
+        // First packet for this universe — record source controller
+        ip_addr_copy(uni->source_ip, *src_ip);
     }
     
-    // Update last ArtDmx source IP (used for ArtSync validation)
-    ip_addr_copy(g_artnet_ctx.state.last_artdmx_ip, *src_ip);
+    // Update per-universe timestamp
+    uni->last_dmx_tick = now;
     
     // Copy DMX data to shadow buffer
     memcpy(g_artnet_shadow_buffer[universe_idx], pkt->data, dmx_len);
@@ -96,15 +97,19 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     // Mark this universe as received
     g_artnet_ctx.state.universes_received |= (1 << universe_idx);
     
-    // Check OpSync timeout - revert to non-sync mode if sync lost
-    if (g_artnet_ctx.state.sync_mode) {
-        if ((now - g_artnet_ctx.state.last_sync_tick) > ARTNET_SYNC_TIMEOUT_MS) {
-            g_artnet_ctx.state.sync_mode = false;
+    // ===== PER-UNIVERSE SYNC TIMEOUT =====
+    // Art-Net spec: revert to non-sync if no ArtSync for 4 seconds
+    if (uni->sync_mode) {
+        if ((now - uni->last_sync_tick) > ARTNET_SYNC_TIMEOUT_MS) {
+            uni->sync_mode = false;
         }
     }
     
-    // In non-sync mode: output immediately 
-    if (!g_artnet_ctx.state.sync_mode) {
+    // ===== OUTPUT DECISION =====
+    // Non-sync: immediate output per Art-Net spec §ArtSync
+    // "ArtDmx packets will be immediately processed and output."
+    // Sync: buffer data, wait for ArtSync from this controller
+    if (!uni->sync_mode) {
         ArtNet_TriggerFrameOutput();
     }
 }
@@ -150,32 +155,44 @@ void ArtNet_HandleArtPoll(const ip_addr_t *addr, u16_t port)
 /**
  * @brief Handle incoming ArtSync packet
  * 
- * Validates source IP against last ArtDmx and triggers synchronized output.
+ * Per Art-Net spec §ArtSync "Multiple controllers": compares the ArtSync
+ * source IP against each universe's recorded source IP. Universes whose
+ * controller matches enter sync mode and output their buffered data.
+ * Universes driven by a different controller are unaffected.
+ * 
+ * This enables multi-controller setups: Controller A can sync its
+ * universes independently of Controller B's non-sync universes.
  */
 void ArtNet_HandleArtSync(const ip_addr_t *src_ip)
 {
     uint8_t num_universes = DeviceConfig_GetUniverseCount();
+    uint32_t now = osKernelGetTickCount();
+    bool any_matched = false;
     
-    // ArtSync only useful for multi-universe
-    if (num_universes <= 1) {
-        return;
+    // Iterate all configured universes and match against ArtSync source IP.
+    // Spec: "a node shall compare the source IP of the ArtSync to the source
+    //        IP of the most recent ArtDmx packet."
+    // We apply this per-universe to support multi-controller environments.
+    for (int i = 0; i < num_universes; i++) {
+        ArtNet_UniverseState_t *uni = &g_artnet_ctx.state.universes[i];
+        
+        // Skip universes with no source assigned
+        if (ip_addr_isany(&uni->source_ip)) {
+            continue;
+        }
+        
+        // Only sync universes whose controller sent this ArtSync
+        if (ip_addr_cmp(src_ip, &uni->source_ip)) {
+            uni->sync_mode = true;
+            uni->last_sync_tick = now;
+            any_matched = true;
+        }
     }
     
-    // Ignore if no ArtDmx received yet
-    if (ip_addr_isany(&g_artnet_ctx.state.last_artdmx_ip)) {
-        return;
+    // Trigger output for the matched controller's buffered data
+    if (any_matched) {
+        ArtNet_TriggerFrameOutput();
     }
-    
-    // Ignore if source doesn't match last ArtDmx
-    if (!ip_addr_cmp(src_ip, &g_artnet_ctx.state.last_artdmx_ip)) {
-        return;
-    }
-    
-    // Enter sync mode and trigger output
-    g_artnet_ctx.state.sync_mode = true;
-    g_artnet_ctx.state.last_sync_tick = osKernelGetTickCount();
-    
-    ArtNet_TriggerFrameOutput();
 }
 
 /* ========================== ArtAddress Handler ========================== */

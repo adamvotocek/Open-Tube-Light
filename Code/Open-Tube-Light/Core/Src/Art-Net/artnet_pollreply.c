@@ -225,10 +225,12 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
         // SwOut: Universe address (low 4 bits)
         reply->sw_out[i] = (config->dmx.artnet_start_universe + i) & 0x0F;
         
-        // GoodOutputA: Data transmitting status, no merge
+        // GoodOutputA: Data transmitting status
+        // Use per-universe source_ip to determine if a controller is actively
+        // driving this universe 
         uint8_t good_output = 0x00;
-        if (g_artnet_ctx.state.universes_received & (1 << i)) {
-            good_output |= 0x80;  // Data being transmitted
+        if (!ip_addr_isany(&g_artnet_ctx.state.universes[i].source_ip)) {
+            good_output |= 0x80;  // Bit 7: Data being transmitted
         }
         reply->good_output_a[i] = good_output;
         
