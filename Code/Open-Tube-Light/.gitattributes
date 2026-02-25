@@ -1,0 +1,12 @@
+# Normalize all text files to LF in the repository.
+# On checkout, Git will use the OS-native line ending (CRLF on Windows)
+# only if core.autocrlf is true — but the stored representation is always LF.
+* text=auto eol=lf
+
+# Binary files — never normalize
+*.bin binary
+*.elf binary
+*.hex binary
+*.png binary
+*.jpg binary
+*.ico binary

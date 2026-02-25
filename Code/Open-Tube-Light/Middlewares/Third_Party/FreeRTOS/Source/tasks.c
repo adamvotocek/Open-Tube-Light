@@ -1414,49 +1414,49 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB )
 			}
 
 			#if ( INCLUDE_vTaskSuspend == 1 )
-				else if( pxStateList == &xSuspendedTaskList )
+			else if( pxStateList == &xSuspendedTaskList )
+			{
+				/* The task being queried is referenced from the suspended
+				list.  Is it genuinely suspended or is it blocked
+				indefinitely? */
+				if( listLIST_ITEM_CONTAINER( &( pxTCB->xEventListItem ) ) == NULL )
 				{
-					/* The task being queried is referenced from the suspended
-					list.  Is it genuinely suspended or is it blocked
-					indefinitely? */
-					if( listLIST_ITEM_CONTAINER( &( pxTCB->xEventListItem ) ) == NULL )
+					#if( configUSE_TASK_NOTIFICATIONS == 1 )
 					{
-						#if( configUSE_TASK_NOTIFICATIONS == 1 )
+						/* The task does not appear on the event list item of
+						and of the RTOS objects, but could still be in the
+						blocked state if it is waiting on its notification
+						rather than waiting on an object. */
+						if( pxTCB->ucNotifyState == taskWAITING_NOTIFICATION )
 						{
-							/* The task does not appear on the event list item of
-							and of the RTOS objects, but could still be in the
-							blocked state if it is waiting on its notification
-							rather than waiting on an object. */
-							if( pxTCB->ucNotifyState == taskWAITING_NOTIFICATION )
-							{
-								eReturn = eBlocked;
-							}
-							else
-							{
-								eReturn = eSuspended;
-							}
+							eReturn = eBlocked;
 						}
-						#else
+						else
 						{
 							eReturn = eSuspended;
 						}
-						#endif
 					}
-					else
+					#else
 					{
-						eReturn = eBlocked;
+						eReturn = eSuspended;
 					}
+					#endif
 				}
+				else
+				{
+					eReturn = eBlocked;
+				}
+			}
 			#endif
 
 			#if ( INCLUDE_vTaskDelete == 1 )
-				else if( ( pxStateList == &xTasksWaitingTermination ) || ( pxStateList == NULL ) )
-				{
-					/* The task being queried is referenced from the deleted
-					tasks list, or it is not referenced from any lists at
-					all. */
-					eReturn = eDeleted;
-				}
+			else if( ( pxStateList == &xTasksWaitingTermination ) || ( pxStateList == NULL ) )
+			{
+				/* The task being queried is referenced from the deleted
+				tasks list, or it is not referenced from any lists at
+				all. */
+				eReturn = eDeleted;
+			}
 			#endif
 
 			else /*lint !e525 Negative indentation is intended to make use of pre-processor clearer. */
