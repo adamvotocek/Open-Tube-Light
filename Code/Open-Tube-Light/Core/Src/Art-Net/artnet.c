@@ -63,7 +63,7 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
     
     // ArtPollReply state
-    memset(&g_artnet_ctx.pending_reply, 0, sizeof(ArtNet_PollReplyRequest_t));
+    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
     g_artnet_ctx.poll_reply_counter = 0;
     
     // Seed PRNG with system tick for random delay generation

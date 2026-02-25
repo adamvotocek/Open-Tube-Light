@@ -122,31 +122,46 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
  */
 void ArtNet_HandleArtPoll(const ip_addr_t *addr, u16_t port)
 {
-    // Ignore poll if reply already pending
-    if (g_artnet_ctx.pending_reply.is_pending) {
-        return;
-    }
-    
     // TODO: Implement flags
     // TODO: Implement targeted mode
-
-    // Store destination address for delayed reply
-    ip_addr_copy(g_artnet_ctx.pending_reply.addr, *addr);
-    g_artnet_ctx.pending_reply.port = port;
-    g_artnet_ctx.pending_reply.is_pending = true;
     
-    // Generate random delay between 0 and 1000ms
-    uint32_t delay_ms = ArtNet_PrngNext() % (ARTNET_POLL_REPLY_DELAY_MAX_MS - 
-                                              ARTNET_POLL_REPLY_DELAY_MIN_MS + 1);
-    delay_ms += ARTNET_POLL_REPLY_DELAY_MIN_MS;
+    ArtNet_PollReplyQueue_t *q = &g_artnet_ctx.reply_queue;
     
-    // Ensure minimum delay of 1ms
-    if (delay_ms == 0) {
-        delay_ms = 1;
+    // Deduplicate: if this controller IP is already queued, skip
+    for (uint8_t i = 0; i < q->count; i++) {
+        if (ip_addr_cmp(addr, &q->entries[i].addr)) {
+            return;
+        }
     }
     
-    // Start one-shot timer
-    osTimerStart(g_artnet_ctx.poll_reply_timer, delay_ms);
+    // Queue full: drop oldest entry (shift left) to make room
+    if (q->count >= ARTNET_MAX_PENDING_REPLIES) {
+        for (uint8_t i = 1; i < ARTNET_MAX_PENDING_REPLIES; i++) {
+            q->entries[i - 1] = q->entries[i];
+        }
+        q->count = ARTNET_MAX_PENDING_REPLIES - 1;
+    }
+    
+    // Append new destination
+    ip_addr_copy(q->entries[q->count].addr, *addr);
+    q->entries[q->count].port = port;
+    bool was_empty = (q->count == 0);
+    q->count++;
+    
+    // Start timer only if this is the first entry — subsequent entries
+    // piggyback on the already-running timer's expiry
+    if (was_empty) {
+        uint32_t delay_ms = ArtNet_PrngNext() % (ARTNET_POLL_REPLY_DELAY_MAX_MS - 
+                                                  ARTNET_POLL_REPLY_DELAY_MIN_MS + 1);
+        delay_ms += ARTNET_POLL_REPLY_DELAY_MIN_MS;
+        
+        // osTimerStart requires delay >= 1
+        if (delay_ms == 0) {
+            delay_ms = 1;
+        }
+        
+        osTimerStart(g_artnet_ctx.poll_reply_timer, delay_ms);
+    }
 }
 
 /* ========================== ArtSync Handler ========================== */
