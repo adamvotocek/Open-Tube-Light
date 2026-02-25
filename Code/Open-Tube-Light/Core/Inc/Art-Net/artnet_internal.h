@@ -56,6 +56,9 @@ typedef struct {
     struct udp_pcb *pcb;                    ///< UDP protocol control block
     osThreadId_t processing_task;           ///< Task to notify on new data
     
+    // Shadow buffer protection
+    osMutexId_t shadow_mutex;               ///< Guards shadow buffer access between tcpip_thread and EffectTask
+    
     // ArtPollReply
     osTimerId_t poll_reply_timer;           ///< Timer for delayed reply
     ArtNet_PollReplyRequest_t pending_reply;///< Pending reply destination

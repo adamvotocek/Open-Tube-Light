@@ -69,6 +69,17 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     // Seed PRNG with system tick for random delay generation
     g_artnet_ctx.prng_state = osKernelGetTickCount() ^ 0xDEADBEEF;
     
+    // Create mutex for shadow buffer access
+    // Priority inheritance prevents inversion if task priorities diverge
+    const osMutexAttr_t shadow_mutex_attr = {
+        .name = "shadowMtx",
+        .attr_bits = osMutexPrioInherit,
+    };
+    g_artnet_ctx.shadow_mutex = osMutexNew(&shadow_mutex_attr);
+    if (g_artnet_ctx.shadow_mutex == NULL) {
+        return -1;
+    }
+    
     // Create one-shot timer for ArtPollReply delay
     g_artnet_ctx.poll_reply_timer = osTimerNew(ArtNet_PollReplyTimerCallback, osTimerOnce, NULL, NULL);
     if (g_artnet_ctx.poll_reply_timer == NULL) {
@@ -107,8 +118,10 @@ void ArtNet_LatchData(void)
 {
     uint8_t num_universes = DeviceConfig_GetUniverseCount();
     
+    osMutexAcquire(g_artnet_ctx.shadow_mutex, osWaitForever);
     memcpy(g_artnet_active_buffer, g_artnet_shadow_buffer, 
            num_universes * ARTNET_DMX_MAX_LENGTH);
+    osMutexRelease(g_artnet_ctx.shadow_mutex);
 }
 
 /* ========================== Network Layer Implementation ========================== */
