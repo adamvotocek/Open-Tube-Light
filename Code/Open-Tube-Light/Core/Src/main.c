@@ -69,7 +69,6 @@ SK9822_HandleTypeDef hsk9822; // handle for the SK9822 strip
 // SK9822 Ping-Pong Buffers in D2 RAM (DMA accessible, non-cacheable via MPU)
 static uint8_t spiBuffer1[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used));
 static uint8_t spiBuffer2[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used));
-static uint8_t spiBuffer3[SK9822_BUFFER_SIZE] __attribute__((section(".spi_buffers"), aligned(32), used));
 static uint8_t *activeBuffer = spiBuffer1;
 static uint8_t *prepareBuffer = spiBuffer2;
 volatile uint8_t spi_tx_busy_flag = 0;
