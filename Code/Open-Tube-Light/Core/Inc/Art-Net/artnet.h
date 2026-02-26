@@ -37,6 +37,7 @@ extern "C" {
 typedef struct {
     ip_addr_t  source_ip;       ///< Source controller IP (0.0.0.0 = unassigned, first-source-wins)
     uint32_t   last_dmx_tick;   ///< Timestamp of last ArtDmx for disconnect detection
+    uint8_t    last_sequence;   ///< Last ArtDmx sequence number (0 = no sequenced packet yet)
     bool       sync_mode;       ///< True when this universe's controller is sending ArtSync
     uint32_t   last_sync_tick;  ///< Timestamp of last ArtSync from this universe's controller
 } ArtNet_UniverseState_t;

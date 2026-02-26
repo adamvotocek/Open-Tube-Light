@@ -73,6 +73,7 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
             (now - u->last_dmx_tick) > ARTNET_DISCONNECT_TIMEOUT_MS) {
             ip_addr_set_zero(&u->source_ip);
             u->sync_mode = false;
+            u->last_sequence = 0;
         }
     }
     
@@ -86,6 +87,19 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     } else {
         // First packet for this universe — record source controller
         ip_addr_copy(uni->source_ip, *src_ip);
+    }
+    
+    // ===== SEQUENCE NUMBER CHECK =====
+    // Sequence 0 disables re-ordering protection per Art-Net spec.
+    // Non-zero: drop stale/duplicate packets using half-window comparison.
+    if (pkt->sequence != 0) {
+        if (uni->last_sequence != 0) {
+            uint8_t diff = (uint8_t)(pkt->sequence - uni->last_sequence);
+            if (diff == 0 || diff > 127) {
+                return;  // Stale or duplicate packet
+            }
+        }
+        uni->last_sequence = pkt->sequence;
     }
     
     // Update per-universe timestamp
