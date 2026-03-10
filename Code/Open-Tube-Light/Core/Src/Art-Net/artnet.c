@@ -83,12 +83,18 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     // Create one-shot timer for ArtPollReply delay
     g_artnet_ctx.poll_reply_timer = osTimerNew(ArtNet_PollReplyTimerCallback, osTimerOnce, NULL, NULL);
     if (g_artnet_ctx.poll_reply_timer == NULL) {
+        osMutexDelete(g_artnet_ctx.shadow_mutex);
+        g_artnet_ctx.shadow_mutex = NULL;
         return -1;
     }
     
     // Create UDP protocol control block and bind to Art-Net port
     g_artnet_ctx.pcb = udp_new();
     if (g_artnet_ctx.pcb == NULL) {
+        osTimerDelete(g_artnet_ctx.poll_reply_timer);
+        g_artnet_ctx.poll_reply_timer = NULL;
+        osMutexDelete(g_artnet_ctx.shadow_mutex);
+        g_artnet_ctx.shadow_mutex = NULL;
         return -1;
     }
     
@@ -96,6 +102,10 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     if (err != ERR_OK) {
         udp_remove(g_artnet_ctx.pcb);
         g_artnet_ctx.pcb = NULL;
+        osTimerDelete(g_artnet_ctx.poll_reply_timer);
+        g_artnet_ctx.poll_reply_timer = NULL;
+        osMutexDelete(g_artnet_ctx.shadow_mutex);
+        g_artnet_ctx.shadow_mutex = NULL;
         return -1;
     }
     
