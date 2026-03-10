@@ -170,7 +170,8 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
 
         case ARTNET_OP_POLL:
             if (p->tot_len >= 14) {
-                ArtNet_HandleArtPoll(addr, port);
+                ArtNet_HandleArtPoll((const ArtNet_ArtPoll_t *)data, p->tot_len,
+                                    addr, port);
             }
             break;
             

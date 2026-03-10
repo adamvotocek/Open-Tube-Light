@@ -103,7 +103,8 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
 /**
  * @brief Handle incoming ArtPoll packet
  */
-void ArtNet_HandleArtPoll(const ip_addr_t *src_ip, u16_t src_port);
+void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
+                         const ip_addr_t *src_ip, u16_t src_port);
 
 /**
  * @brief Handle incoming ArtSync packet

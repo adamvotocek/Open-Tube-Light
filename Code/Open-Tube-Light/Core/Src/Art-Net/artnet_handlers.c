@@ -132,13 +132,53 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
 /**
  * @brief Handle incoming ArtPoll packet
  * 
- * Schedules an ArtPollReply with random delay (0-1s) per Art-Net spec.
+ * Parses Flags field for targeted mode, then schedules an ArtPollReply
+ * with random delay (0-1s) per Art-Net spec.
+ *
+ * Flags bit map:
+ * - Bit 0: Deprecated
+ * - Bit 1: Send ArtPollReply on condition change (TODO: not implemented)
+ * - Bit 2: Send diagnostics (TODO: not implemented, requires ArtDiagData)
+ * - Bit 3: Diagnostics unicast vs broadcast (TODO: not implemented)
+ * - Bit 4: Disable VLC (not applicable to this device)
+ * - Bit 5: Targeted mode — implemented below
  */
-void ArtNet_HandleArtPoll(const ip_addr_t *addr, u16_t port)
+void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
+                         const ip_addr_t *addr, u16_t port)
 {
-    // TODO: Implement flags
-    // TODO: Implement targeted mode
+    // ===== FLAGS BIT 5: TARGETED MODE =====
+    // Only reply if at least one of our Port-Addresses falls within the
+    // targeted range [TargetPortAddressBottom, TargetPortAddressTop].
+    if (pkt->flags & (1 << 5)) {
+        // Target PA fields need at least 18 bytes
+        if (len >= 18) {
+            const DeviceConfig_t *config = DeviceConfig_Get();
+            uint8_t num_universes = DeviceConfig_GetUniverseCount();
+            
+            uint16_t target_top = ((uint16_t)pkt->target_pa_top_hi << 8)
+                                | pkt->target_pa_top_lo;
+            uint16_t target_bot = ((uint16_t)pkt->target_pa_bot_hi << 8)
+                                | pkt->target_pa_bot_lo;
+            
+            bool in_range = false;
+            for (int i = 0; i < num_universes; i++) {
+                uint16_t pa = ARTNET_BUILD_PORT_ADDRESS(
+                    config->dmx.artnet_net,
+                    config->dmx.artnet_subnet,
+                    config->dmx.artnet_start_universe + i);
+                if (pa >= target_bot && pa <= target_top) {
+                    in_range = true;
+                    break;
+                }
+            }
+            
+            if (!in_range) {
+                return;  // None of our Port-Addresses match targeted range
+            }
+        }
+    }
     
+    // ===== QUEUE REPLY =====
     ArtNet_PollReplyQueue_t *q = &g_artnet_ctx.reply_queue;
     
     // Deduplicate: if this controller IP is already queued, skip
