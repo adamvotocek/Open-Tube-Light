@@ -175,6 +175,10 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             }
             break;
             
+        case ARTNET_OP_ADDRESS:
+            ArtNet_HandleArtAddress((const ArtNet_ArtAddress_t *)data, p->tot_len);
+            break;
+            
         default:
             break;
     }
