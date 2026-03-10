@@ -268,17 +268,15 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip)
 /**
  * @brief Handle incoming ArtAddress packet
  * 
- * Applies configuration changes from controller and sends ArtPollReply.
- * 
- * @note Not yet implemented - placeholder for future expansion
+ * TODO: Not yet implemented. When implemented, this handler should:
+ * - Parse NetSwitch, SubSwitch, SwOut[] to update Port-Address
+ * - Parse ShortName/LongName to update device identity
+ * - Parse Command field for merge mode, LED control, failsafe, etc.
+ * - Apply changes via DeviceConfig_Set*() functions
+ * - Send ArtPollReply to confirm changes
  */
 void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len)
 {
     (void)pkt;
     (void)len;
-    
-    // TODO: Implement ArtAddress handling
-    // - Parse configuration commands
-    // - Update device_config via setter functions
-    // - Send ArtPollReply to confirm changes
 }

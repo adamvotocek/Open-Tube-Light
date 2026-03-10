@@ -98,6 +98,13 @@ extern "C" {
  */
 #define ARTNET_OP_SYNC          0x5200
 
+/**
+ * @brief OpAddress - Remote node configuration
+ * @note Controller sends this to reprogram node settings (names, Port-Address, etc.)
+ * @note Handler exists but is not yet implemented
+ */
+#define ARTNET_OP_ADDRESS       0x6000
+
 /* ========================== Packet Structures ========================== */
 
 /**
