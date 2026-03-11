@@ -55,7 +55,7 @@ extern "C" {
 
 /**
  * @brief Controller disconnect timeout (10 seconds)
- * @note If no ArtDmx received within this time, reset source IP tracking and merge mode
+ * @note If no ArtDmx received within this time, reset source IP tracking
  */
 #define ARTNET_DISCONNECT_TIMEOUT_MS  10000
 
