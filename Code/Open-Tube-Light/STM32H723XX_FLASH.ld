@@ -274,8 +274,8 @@ SECTIONS
   .d2_dma_nocache (NOLOAD) :
   {
     . = ALIGN(32);
-    KEEP(*(.RxDecripSection))   /* ETH Rx DMA Descriptors */
-    KEEP(*(.TxDecripSection))   /* ETH Tx DMA Descriptors */
+    KEEP(*(.RxDescripSection))   /* ETH Rx DMA Descriptors */
+    KEEP(*(.TxDescripSection))   /* ETH Tx DMA Descriptors */
 
     . = ALIGN(32);
     KEEP(*(.spi_buffers))       /* SK9822 LED strip SPI DMA buffers */
