@@ -59,6 +59,15 @@ typedef struct {
 int ArtNet_Init(osThreadId_t processing_task_handle);
 
 /**
+ * @brief Tear down the Art-Net receiver and release all resources
+ * 
+ * Removes the UDP PCB, deletes the timer and mutex, zeros buffers,
+ * and clears the initialized flag. Safe to call when not initialized.
+ * After deinit, ArtNet_Init() can be called again.
+ */
+void ArtNet_Deinit(void);
+
+/**
  * @brief Get pointer to the active DMX buffer for a specific universe
  * 
  * @param universe Universe index (0 to configured universe count - 1)

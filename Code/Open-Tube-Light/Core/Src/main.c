@@ -25,7 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "SK9822/sk9822.h"
 #include "device_config.h"
-#include "Art-Net/artnet.h"
+#include "dmx_input.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -384,9 +384,9 @@ void StartDefaultTask(void *argument)
   // Initialize device configuration (loads from flash or uses factory defaults)
   DeviceConfig_Init();
   
-  // Initialize Art-Net after LwIP and config are ready
-  // Pass the EffectTask handle so it can be notified on new data
-  ArtNet_Init(EffectTaskHandle);
+  // Start the configured DMX input source (Art-Net, sACN, or DMX512)
+  const DeviceConfig_t *cfg = DeviceConfig_Get();
+  DMX_Input_Start(cfg->dmx.input_source, EffectTaskHandle);
   
   /* Infinite loop */
   for(;;)
@@ -414,15 +414,15 @@ void StartEffectTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    // Wait for notification from Art-Net
+    // Wait for notification from DMX input source
     uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
     
     if ((flags & osFlagsError) || !(flags & 0x01)) {
       continue;  // RTOS error or spurious wake — retry
     }
 
-    // Latch Art-Net data (copy shadow to active buffer)
-    ArtNet_LatchData();
+    // Latch DMX data (copy shadow to active buffer)
+    DMX_Input_Latch();
     
     // Wait for previous DMA transfer to complete
     while (spi_tx_busy_flag) {
@@ -433,7 +433,7 @@ void StartEffectTask(void *argument)
     hsk9822.buffer = prepareBuffer;
     sk9822_prepare_frames(&hsk9822);
     
-    // Convert Art-Net DMX data to SK9822 format
+    // Convert DMX channel data to SK9822 format
     // dmx_start_address (1-based) sets where our pixel data begins
     // within the first universe. Subsequent universes start at ch 0.
     const DeviceConfig_t *config = DeviceConfig_Get();
@@ -442,7 +442,7 @@ void StartEffectTask(void *argument)
     uint8_t num_universes = DeviceConfig_GetUniverseCount();
     
     for (uint8_t uni = 0; uni < num_universes && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
-      const uint8_t *dmx = ArtNet_GetUniverseData(uni);
+      const uint8_t *dmx = DMX_Input_GetUniverse(uni);
       if (dmx == NULL) continue;
       
       // First universe: skip to dmx_start_address offset.
@@ -451,7 +451,7 @@ void StartEffectTask(void *argument)
       
       // Read pixels until universe boundary or strip is full.
       // Ensure a full pixel (cpp channels) fits before reading.
-      for (; (ch + cpp) <= ARTNET_DMX_MAX_LENGTH && led_idx < SK9822_STRIP_LED_COUNT; ch += cpp) {
+      for (; (ch + cpp) <= DMX_UNIVERSE_MAX_LENGTH && led_idx < SK9822_STRIP_LED_COUNT; ch += cpp) {
         // TODO: handle RGBW and RGB16 formats (currently RGB only)
         sk9822_set_led(&hsk9822, led_idx, dmx[ch], dmx[ch + 1], dmx[ch + 2], 255);
         led_idx++;
