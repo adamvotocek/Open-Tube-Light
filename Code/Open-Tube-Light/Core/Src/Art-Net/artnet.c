@@ -13,6 +13,7 @@
  */
 
 #include "Art-Net/artnet_internal.h"
+#include "dmx_input.h"
 #include "main.h"
 #include "lwip/udp.h"
 #include "lwip/tcpip.h"
@@ -114,6 +115,40 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     
     g_artnet_ctx.initialized = true;
     return 0;
+}
+
+void ArtNet_Deinit(void)
+{
+    if (!g_artnet_ctx.initialized) {
+        return;
+    }
+    
+    // Stop receiving — must happen first to prevent callbacks during teardown
+    if (g_artnet_ctx.pcb != NULL) {
+        udp_remove(g_artnet_ctx.pcb);
+        g_artnet_ctx.pcb = NULL;
+    }
+    
+    // Cancel any pending poll reply timer
+    if (g_artnet_ctx.poll_reply_timer != NULL) {
+        osTimerStop(g_artnet_ctx.poll_reply_timer);
+        osTimerDelete(g_artnet_ctx.poll_reply_timer);
+        g_artnet_ctx.poll_reply_timer = NULL;
+    }
+    
+    if (g_artnet_ctx.shadow_mutex != NULL) {
+        osMutexDelete(g_artnet_ctx.shadow_mutex);
+        g_artnet_ctx.shadow_mutex = NULL;
+    }
+    
+    // Zero buffers so lights go dark on protocol switch
+    memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
+    memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
+    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
+    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
+    
+    g_artnet_ctx.processing_task = NULL;
+    g_artnet_ctx.initialized = false;
 }
 
 const uint8_t* ArtNet_GetUniverseData(uint8_t universe)
@@ -221,3 +256,12 @@ void ArtNet_TriggerFrameOutput(void)
         osThreadFlagsSet(g_artnet_ctx.processing_task, ARTNET_THREAD_FLAG_FRAME_READY);
     }
 }
+
+/* ========================== DMX Input Driver Vtable ========================== */
+
+const DMX_Input_Driver_t dmx_input_artnet = {
+    .init         = ArtNet_Init,
+    .deinit       = ArtNet_Deinit,
+    .latch        = ArtNet_LatchData,
+    .get_universe = ArtNet_GetUniverseData,
+};

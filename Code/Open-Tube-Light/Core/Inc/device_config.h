@@ -41,6 +41,9 @@ extern "C" {
 /** @brief Maximum number of pixels supported by the device */
 #define DEVICE_CONFIG_MAX_PIXELS        144
 
+/** @brief Maximum DMX data length per universe (512 bytes per DMX512-A spec) */
+#define DMX_UNIVERSE_MAX_LENGTH         512
+
 /** @brief Maximum number of Art-Net universes */
 #define DEVICE_CONFIG_MAX_UNIVERSES     4
 
@@ -74,7 +77,8 @@ typedef enum {
  */
 typedef enum {
     DMX_INPUT_ARTNET = 0,   ///< Art-Net over Ethernet (default)
-    DMX_INPUT_DMX512 = 1,   ///< DMX512 over UART
+    DMX_INPUT_SACN   = 1,   ///< sACN (E1.31) over Ethernet
+    DMX_INPUT_DMX512 = 2,   ///< DMX512 over UART
 } DeviceConfig_DmxInput_t;
 
 /**
