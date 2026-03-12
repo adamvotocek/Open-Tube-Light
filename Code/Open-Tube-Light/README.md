@@ -31,12 +31,6 @@ DMX protocol
 Failsafe behavior
 - hold last state/full/zero
 
-Art-Net merge mode
-- either HTP(default) or LTP
-
-
-
-
 
 
 Other settings may appear as development continues.

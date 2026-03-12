@@ -74,3 +74,11 @@ const uint8_t* DMX_Input_GetUniverse(uint8_t universe)
     }
     return NULL;
 }
+
+uint32_t DMX_Input_GetFailsafeTimeout(void)
+{
+    if (active_driver != NULL) {
+        return active_driver->failsafe_timeout_ms;
+    }
+    return 12000;  // Conservative default
+}
