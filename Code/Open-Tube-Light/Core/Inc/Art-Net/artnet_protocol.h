@@ -54,10 +54,13 @@ extern "C" {
 #define ARTNET_SYNC_TIMEOUT_MS  4000
 
 /**
- * @brief Controller disconnect timeout (10 seconds)
- * @note If no ArtDmx received within this time, reset source IP tracking
+ * @brief Controller disconnect timeout (5 seconds)
+ * @note If no ArtDmx received within this time, reset source IP tracking.
+ *       Must be <= failsafe_timeout_ms so that source IP is cleared before
+ *       or when failsafe triggers, allowing a new controller to take over
+ *       without being blocked by the stale source IP.
  */
-#define ARTNET_DISCONNECT_TIMEOUT_MS  10000
+#define ARTNET_DISCONNECT_TIMEOUT_MS  5000
 
 /**
  * @brief Minimum random delay for ArtPollReply (0 ms)

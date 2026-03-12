@@ -27,6 +27,7 @@
 #include "SK9822/sk9822.h"
 #include "device_config.h"
 #include "dmx_input.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -144,6 +145,11 @@ int main(void)
   /* USER CODE BEGIN 2 */
     //5V PSU disabled at startup
     HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_RESET);
+
+    // Zero SPI ping-pong buffers to prevent stale frame output after soft reset.
+    // These live in NOLOAD sections (D2 SRAM) which are not cleared by startup code.
+    memset(spiBuffer1, 0, sizeof(spiBuffer1));
+    memset(spiBuffer2, 0, sizeof(spiBuffer2));
 
     // Initialize SK9822 with the first buffer (will swap in processing task)
     sk9822_init(&hsk9822, &hspi1, prepareBuffer, &spi_tx_busy_flag);
@@ -455,6 +461,12 @@ void StartDefaultTask(void *argument)
   /* USER CODE END 5 */
 }
 
+// I have a problem. If I reset the device, without power cycle, it outputs the last frame that it recieved before the reset. If I power cycle it, the ram gets cleared and the  led strip stays black, which is what one would expect.
+// However, after that, even if I send artnet to the device continuously, it doesnt pick up on it right away. it takes like 5-6 seconds to start displaying (and maybe recieving) artnet data. 
+// In these 5-6 seconds, the device retransmits whatever it has in its ram and even has enough time to enter failsafe mode. After that, the device works correctly.
+// the 5-6 second delay doesn't depend on the length of the artnet disconnect timeout or the artsync timeout, I tested that.
+// Also, not sure if my source IP tracking has a correct timeout in the artnet_protocol.h, since there is a new timeout in the dmx input abstraction layer.
+
 /* USER CODE BEGIN Header_StartEffectTask */
 /**
 * @brief Function implementing the EffectTask thread.
@@ -468,61 +480,111 @@ void StartEffectTask(void *argument)
   // Wait for initialization to complete
   osDelay(100);
   
+  uint32_t last_frame_tick = 0;
+  bool failsafe_applied = false;
+  bool first_frame_received = false;  // Don't apply failsafe until network is up and first frame arrives
+  
   /* Infinite loop */
   for(;;)
   {
-    // Wait for notification from DMX input source
-    uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, osWaitForever);
+    // Wait for notification from DMX input source or timeout for periodic SPI refresh
+    uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, DMX_INPUT_REFRESH_INTERVAL_MS);
     
-    if ((flags & osFlagsError) || !(flags & 0x01)) {
-      continue;  // RTOS error or spurious wake — retry
-    }
-
-    // Latch DMX data (copy shadow to active buffer)
-    DMX_Input_Latch();
+    bool new_frame = !(flags & osFlagsError) && (flags & 0x01);
+    uint32_t now = osKernelGetTickCount();
     
-    // Wait for previous DMA transfer to complete
-    while (spi_tx_busy_flag) {
-      osDelay(1);
-    }
-    
+    if (new_frame) {
+      DMX_Input_Latch();
+      last_frame_tick = now;
+      failsafe_applied = false;
+      first_frame_received = true;
+      
+      // Wait for previous DMA transfer to complete
+      while (spi_tx_busy_flag) {
+        osDelay(1);
+      }
+      
     // Point SK9822 handle to the prepare buffer
-    hsk9822.buffer = prepareBuffer;
-    sk9822_prepare_frames(&hsk9822);
-    
+      hsk9822.buffer = prepareBuffer;
+      sk9822_prepare_frames(&hsk9822);
+      
     // Convert DMX channel data to SK9822 format
     // dmx_start_address (1-based) sets where our pixel data begins
     // within the first universe. Subsequent universes start at ch 0.
-    const DeviceConfig_t *config = DeviceConfig_Get();
-    uint8_t cpp = DeviceConfig_GetChannelsPerPixel();
-    uint16_t led_idx = 0;
-    uint8_t num_universes = DeviceConfig_GetUniverseCount();
-    
-    for (uint8_t uni = 0; uni < num_universes && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
-      const uint8_t *dmx = DMX_Input_GetUniverse(uni);
-      if (dmx == NULL) continue;
+      const DeviceConfig_t *config = DeviceConfig_Get();
+      uint8_t cpp = DeviceConfig_GetChannelsPerPixel();
+      uint16_t led_idx = 0;
+      uint8_t num_universes = DeviceConfig_GetUniverseCount();
       
+      for (uint8_t uni = 0; uni < num_universes && led_idx < SK9822_STRIP_LED_COUNT; uni++) {
+        const uint8_t *dmx = DMX_Input_GetUniverse(uni);
+        if (dmx == NULL) continue;
+        
       // First universe: skip to dmx_start_address offset.
       // Subsequent universes: pixel data starts at channel 0.
-      uint16_t ch = (uni == 0) ? (config->dmx.dmx_start_address - 1) : 0;
-      
+        uint16_t ch = (uni == 0) ? (config->dmx.dmx_start_address - 1) : 0;
+        
       // Read pixels until universe boundary or strip is full.
       // Ensure a full pixel (cpp channels) fits before reading.
-      for (; (ch + cpp) <= DMX_UNIVERSE_MAX_LENGTH && led_idx < SK9822_STRIP_LED_COUNT; ch += cpp) {
-        // TODO: handle RGBW and RGB16 formats (currently RGB only)
-        sk9822_set_led(&hsk9822, led_idx, dmx[ch], dmx[ch + 1], dmx[ch + 2], 255);
-        led_idx++;
+        for (; (ch + cpp) <= DMX_UNIVERSE_MAX_LENGTH && led_idx < SK9822_STRIP_LED_COUNT; ch += cpp) {
+          // TODO: handle RGBW and RGB16 formats (currently RGB only)
+          sk9822_set_led(&hsk9822, led_idx, dmx[ch], dmx[ch + 1], dmx[ch + 2], 255);
+          led_idx++;
+        }
       }
+      
+      // Swap and transmit
+      uint8_t *temp = activeBuffer;
+      activeBuffer = prepareBuffer;
+      prepareBuffer = temp;
+      
+      hsk9822.buffer = activeBuffer;
+      sk9822_show(&hsk9822);
+      
+    } else if (first_frame_received && !failsafe_applied &&
+               (now - last_frame_tick) > DMX_Input_GetFailsafeTimeout()) {
+      // ===== FAILSAFE: controller disconnected =====
+      failsafe_applied = true;
+      
+      while (spi_tx_busy_flag) {
+        osDelay(1);
+      }
+      
+      const DeviceConfig_t *config = DeviceConfig_Get();
+      hsk9822.buffer = prepareBuffer;
+      sk9822_prepare_frames(&hsk9822);
+      
+      switch (config->output.failsafe) {
+        case FAILSAFE_ZERO:
+          sk9822_set_all(&hsk9822, 0, 0, 0, 0);
+          break;
+        case FAILSAFE_FULL:
+          sk9822_set_all(&hsk9822, 255, 255, 255, 255);
+          break;
+        case FAILSAFE_HOLD:
+        default:
+          // Hold: activeBuffer already has last good data, just retransmit
+          break;
+      }
+      
+      if (config->output.failsafe != FAILSAFE_HOLD) {
+        uint8_t *temp = activeBuffer;
+        activeBuffer = prepareBuffer;
+        prepareBuffer = temp;
+      }
+      
+      hsk9822.buffer = activeBuffer;
+      sk9822_show(&hsk9822);
+      
+    } else {
+      // ===== IDLE REFRESH: retransmit current pixel data =====
+      while (spi_tx_busy_flag) {
+        osDelay(1);
+      }
+      
+      hsk9822.buffer = activeBuffer;
+      sk9822_show(&hsk9822);
     }
-    
-    // Swap SPI buffers: prepare becomes active, active becomes prepare
-    uint8_t *temp = activeBuffer;
-    activeBuffer = prepareBuffer;
-    prepareBuffer = temp;
-    
-    // Trigger DMA transfer from the newly prepared (now active) buffer
-    hsk9822.buffer = activeBuffer;
-    sk9822_show(&hsk9822);
   }
   /* USER CODE END StartEffectTask */
 }

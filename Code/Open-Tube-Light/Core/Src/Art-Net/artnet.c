@@ -260,8 +260,9 @@ void ArtNet_TriggerFrameOutput(void)
 /* ========================== DMX Input Driver Vtable ========================== */
 
 const DMX_Input_Driver_t dmx_input_artnet = {
-    .init         = ArtNet_Init,
-    .deinit       = ArtNet_Deinit,
-    .latch        = ArtNet_LatchData,
-    .get_universe = ArtNet_GetUniverseData,
+    .init                = ArtNet_Init,
+    .deinit              = ArtNet_Deinit,
+    .latch               = ArtNet_LatchData,
+    .get_universe        = ArtNet_GetUniverseData,
+    .failsafe_timeout_ms = 5000,  
 };

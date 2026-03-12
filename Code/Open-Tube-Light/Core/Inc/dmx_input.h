@@ -22,6 +22,11 @@
 extern "C" {
 #endif
 
+/* ========================== Constants ========================== */
+
+/** @brief SPI retransmit interval when no new DMX data arrives (ms) */
+#define DMX_INPUT_REFRESH_INTERVAL_MS  150
+
 /* ========================== Types ========================== */
 
 /**
@@ -59,6 +64,14 @@ typedef struct {
      * @return Pointer to 512-byte buffer, or NULL if index out of range
      */
     const uint8_t*(*get_universe)(uint8_t universe);
+    
+    /**
+     * @brief Protocol-specific disconnect timeout in milliseconds
+     * 
+     * After this duration without new data, the consumer applies failsafe.
+     * Values per protocol specs: Art-Net=4000, sACN=2500, DMX512=1250.
+     */
+    uint32_t failsafe_timeout_ms;
 } DMX_Input_Driver_t;
 
 /* ========================== Public API ========================== */
@@ -98,6 +111,13 @@ void DMX_Input_Latch(void);
  * @return Pointer to 512-byte buffer, or NULL if no driver active or index invalid
  */
 const uint8_t* DMX_Input_GetUniverse(uint8_t universe);
+
+/**
+ * @brief Get the active protocol's failsafe timeout
+ * 
+ * @return Timeout in ms, or 4000 as default if no driver is active
+ */
+uint32_t DMX_Input_GetFailsafeTimeout(void);
 
 /* ========================== Driver Instances ========================== */
 
