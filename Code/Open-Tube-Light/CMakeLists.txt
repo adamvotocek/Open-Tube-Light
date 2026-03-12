@@ -47,6 +47,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # User application sources (not managed by CubeMX)
     Core/Src/device_config.c
     Core/Src/dmx_input.c
+    Core/Src/pixel_render.c
     Core/Src/SK9822/sk9822.c
     Core/Src/Art-Net/artnet.c
     Core/Src/Art-Net/artnet_handlers.c
