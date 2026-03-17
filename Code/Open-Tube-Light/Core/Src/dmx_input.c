@@ -25,7 +25,7 @@ static const DMX_Input_Driver_t* DMX_Input_ResolveDriver(DeviceConfig_DmxInput_t
     switch (source) {
         case DMX_INPUT_ARTNET: return &dmx_input_artnet;
         // case DMX_INPUT_SACN:   return &dmx_input_sacn;
-        // case DMX_INPUT_DMX512: return &dmx_input_dmx512;
+        case DMX_INPUT_DMX512: return &dmx_input_dmx512;
         default:               return NULL;
     }
 }
