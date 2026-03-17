@@ -10,10 +10,7 @@
  *   pending_buf[] → DTCM (.DMX_Buffers) — ISR writes to one, Latch reads the other
  *   active_buf    → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
  *
- * ISR/thread synchronization uses a lock-free double-buffer swap instead of
- * a mutex, because FreeRTOS mutexes cannot be used from ISR context.
- *
- * Single-universe driver: DMX512 on one wire carries one universe.
+ * ISR/thread synchronization uses a lock-free double-buffer swap.
  */
 
 #include "DMX512/dmx512_uart.h"
@@ -100,6 +97,48 @@ static void DMX512_Uart_StartDmaRx(void)
      * Ensure both are set after every restart. */
     SET_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
     SET_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
+}
+
+/**
+ * @brief Process a completed DMX packet from dma_rx_buf
+ *
+ * Validates NULL START code, copies channel data into the pending
+ * double-buffer, and notifies EffectTask. Called from both the IDLE
+ * handler (normal path) and the FE handler (MBB = 0 path).
+ *
+ * @param received  Number of bytes DMA transferred (including START code)
+ */
+static void DMX512_Uart_ProcessPacket(uint16_t received)
+{
+    /* Need at least 2 bytes: START code + 1 data slot */
+    if (received >= 2 && dma_rx_buf[0] == 0x00) {
+        /* NULL START Code — copy channel data (skip slot 0).
+         * Clamp to 512 channels max. */
+        uint16_t data_len = received - 1;
+        if (data_len > DMX_UNIVERSE_MAX_LENGTH) {
+            data_len = DMX_UNIVERSE_MAX_LENGTH;
+        }
+
+        /* Write to the current pending buffer (lock-free) */
+        uint8_t idx = write_idx;
+        memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
+
+        /* Zero remaining channels beyond what this packet carried.
+         * Spec: controllers may send fewer than 512 slots. */
+        if (data_len < DMX_UNIVERSE_MAX_LENGTH) {
+            memset(&pending_buf[idx][data_len], 0,
+                   DMX_UNIVERSE_MAX_LENGTH - data_len);
+        }
+
+        /* Publish: flip write_idx so Latch reads this buffer */
+        write_idx ^= 1;
+
+        /* Wake EffectTask */
+        if (notify_task != NULL) {
+            osThreadFlagsSet(notify_task, DMX512_THREAD_FLAG_FRAME_READY);
+        }
+    }
+    /* Non-NULL START codes are silently ignored per DMX512-A §8.5.4 */
 }
 
 /* ========================== Vtable Functions ========================== */
@@ -242,7 +281,18 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
         (void)READ_REG(huart->Instance->RDR);
 
         if (rx_state == DMX512_STATE_IDLE || rx_state == DMX512_STATE_BREAK_DETECTED) {
-            /* Valid Break — restart DMA at beginning of buffer */
+            /* If we already had a Break and DMA captured data, process the
+             * previous packet before restarting. This handles MBB = 0 where
+             * the transmitter goes directly from data into the next Break
+             * with no IDLE gap (DMX512-A §8.9, Table 6 Designation #10). */
+            if (rx_state == DMX512_STATE_BREAK_DETECTED) {
+                uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
+                uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
+                if (received > 0) {
+                    DMX512_Uart_ProcessPacket(received);
+                }
+            }
+
             DMX512_Uart_StartDmaRx();
             rx_state = DMX512_STATE_BREAK_DETECTED;
         } else {
@@ -272,36 +322,7 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
                 return;
             }
 
-            /* Need at least 2 bytes: START code + 1 data slot */
-            if (received >= 2 && dma_rx_buf[0] == 0x00) {
-                /* NULL START Code — copy channel data (skip slot 0).
-                 * Clamp to 512 channels max. */
-                uint16_t data_len = received - 1;
-                if (data_len > DMX_UNIVERSE_MAX_LENGTH) {
-                    data_len = DMX_UNIVERSE_MAX_LENGTH;
-                }
-
-                /* Write to the current pending buffer (lock-free) */
-                uint8_t idx = write_idx;
-                memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
-
-                /* Zero remaining channels beyond what this packet carried.
-                 * Spec: controllers may send fewer than 512 slots. */
-                if (data_len < DMX_UNIVERSE_MAX_LENGTH) {
-                    memset(&pending_buf[idx][data_len], 0,
-                           DMX_UNIVERSE_MAX_LENGTH - data_len);
-                }
-
-                /* Publish: flip write_idx so Latch reads this buffer */
-                write_idx ^= 1;
-
-                /* Wake EffectTask */
-                if (notify_task != NULL) {
-                    osThreadFlagsSet(notify_task, DMX512_THREAD_FLAG_FRAME_READY);
-                }
-            }
-            /* Non-NULL START codes are silently ignored per DMX512-A §8.5.4 */
-
+            DMX512_Uart_ProcessPacket(received);
             rx_state = DMX512_STATE_IDLE;
         }
     }
