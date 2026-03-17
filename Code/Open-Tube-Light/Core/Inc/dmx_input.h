@@ -124,6 +124,9 @@ uint32_t DMX_Input_GetFailsafeTimeout(void);
 /** @brief Art-Net driver (defined in artnet.c) */
 extern const DMX_Input_Driver_t dmx_input_artnet;
 
+/** @brief DMX512 UART driver (defined in dmx512_uart.c) */
+extern const DMX_Input_Driver_t dmx_input_dmx512;
+
 #ifdef __cplusplus
 }
 #endif

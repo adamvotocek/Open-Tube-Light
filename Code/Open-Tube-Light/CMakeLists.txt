@@ -52,6 +52,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/Art-Net/artnet.c
     Core/Src/Art-Net/artnet_handlers.c
     Core/Src/Art-Net/artnet_pollreply.c
+    Core/Src/DMX512/dmx512_uart.c
 )
 
 # Add include paths
