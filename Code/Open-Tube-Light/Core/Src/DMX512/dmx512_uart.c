@@ -6,9 +6,12 @@
  * Break detection via Framing Error, end-of-packet via IDLE line.
  *
  * Buffer strategy:
- *   dma_rx_buf  → D2 SRAM (.uart_buffers, non-cacheable) — DMA writes here
- *   shadow_buf  → DTCM (.DMX_Buffers) — ISR copies valid payload here
- *   active_buf  → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
+ *   dma_rx_buf    → D2 SRAM (.uart_buffers, non-cacheable) — DMA writes here
+ *   pending_buf[] → DTCM (.DMX_Buffers) — ISR writes to one, Latch reads the other
+ *   active_buf    → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
+ *
+ * ISR/thread synchronization uses a lock-free double-buffer swap instead of
+ * a mutex, because FreeRTOS mutexes cannot be used from ISR context.
  *
  * Single-universe driver: DMX512 on one wire carries one universe.
  */
@@ -53,28 +56,30 @@ static uint8_t dma_rx_buf[DMX512_PACKET_MAX_SIZE]
     __attribute__((section(".uart_buffers"), aligned(32)));
 
 /**
- * @brief Shadow buffer — written by ISR, protected by mutex
+ * @brief Double pending buffers — ISR writes one while Latch reads the other
  *
  * Contains channel data only (slots 1-512, no START code).
  * Placed in DTCM for zero-wait-state CPU access.
+ * Lock-free: ISR writes to pending_buf[write_idx], then flips write_idx.
+ * Latch reads from pending_buf[write_idx ^ 1] (the last completed buffer).
  */
-static uint8_t shadow_buf[DMX_UNIVERSE_MAX_LENGTH]
+static uint8_t pending_buf[2][DMX_UNIVERSE_MAX_LENGTH]
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /**
  * @brief Active buffer — read by EffectTask during rendering
  *
- * Populated by Latch() under mutex for a consistent snapshot.
+ * Populated by Latch() from the last-completed pending buffer.
  */
 static uint8_t active_buf[DMX_UNIVERSE_MAX_LENGTH]
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /* ========================== Private State ========================== */
 
-static osMutexId_t shadow_mutex;
 static osThreadId_t notify_task;
 static UART_HandleTypeDef *dmx_huart;
 static volatile DMX512_State_t rx_state = DMX512_STATE_IDLE;
+static volatile uint8_t write_idx = 0;  /* ISR toggles after each complete write */
 static volatile bool initialized = false;
 
 /* ========================== Private Helpers ========================== */
@@ -102,7 +107,7 @@ static void DMX512_Uart_StartDmaRx(void)
 /**
  * @brief Initialize DMX512 UART reception
  *
- * Sets up mutex, zeros buffers, enables FE + IDLE interrupts, starts DMA.
+ * Zeros buffers, enables FE + IDLE interrupts, starts DMA.
  * UART5 peripheral must already be initialized by CubeMX (MX_UART5_Init).
  */
 static int DMX512_Uart_Init(osThreadId_t task)
@@ -115,18 +120,10 @@ static int DMX512_Uart_Init(osThreadId_t task)
     notify_task = task;
     rx_state    = DMX512_STATE_IDLE;
 
-    memset(shadow_buf, 0, sizeof(shadow_buf));
+    memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
-
-    const osMutexAttr_t mutex_attr = {
-        .name      = "dmx512Mtx",
-        .attr_bits = osMutexPrioInherit,
-    };
-    shadow_mutex = osMutexNew(&mutex_attr);
-    if (shadow_mutex == NULL) {
-        return -1;
-    }
+    write_idx = 0;
 
     /* Start DMA reception — arms the DMA stream for the first packet */
     DMX512_Uart_StartDmaRx();
@@ -146,7 +143,7 @@ static int DMX512_Uart_Init(osThreadId_t task)
 /**
  * @brief Tear down DMX512 UART reception
  *
- * Stops DMA, disables ISR flags, deletes mutex, zeros buffers.
+ * Stops DMA, disables ISR flags, zeros buffers.
  * Safe to call when not initialized.
  */
 static void DMX512_Uart_Deinit(void)
@@ -159,13 +156,8 @@ static void DMX512_Uart_Deinit(void)
 
     HAL_UART_AbortReceive(dmx_huart);
 
-    if (shadow_mutex != NULL) {
-        osMutexDelete(shadow_mutex);
-        shadow_mutex = NULL;
-    }
-
     /* Zero buffers so lights go dark on protocol switch (safety) */
-    memset(shadow_buf, 0, sizeof(shadow_buf));
+    memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
 
@@ -176,15 +168,16 @@ static void DMX512_Uart_Deinit(void)
 }
 
 /**
- * @brief Latch shadow buffer into active buffer
+ * @brief Latch most recent pending buffer into active buffer
  *
- * Mutex-protected copy so EffectTask sees a consistent snapshot.
+ * Reads from the last buffer the ISR completed (write_idx ^ 1).
+ * Lock-free: ISR only ever writes to pending_buf[write_idx], which
+ * is the OTHER buffer, so no torn read is possible.
  */
 static void DMX512_Uart_Latch(void)
 {
-    osMutexAcquire(shadow_mutex, osWaitForever);
-    memcpy(active_buf, shadow_buf, DMX_UNIVERSE_MAX_LENGTH);
-    osMutexRelease(shadow_mutex);
+    uint8_t read_idx = write_idx ^ 1;
+    memcpy(active_buf, pending_buf[read_idx], DMX_UNIVERSE_MAX_LENGTH);
 }
 
 /**
@@ -288,16 +281,19 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
                     data_len = DMX_UNIVERSE_MAX_LENGTH;
                 }
 
-                osMutexAcquire(shadow_mutex, 0);
-                memcpy(shadow_buf, &dma_rx_buf[1], data_len);
+                /* Write to the current pending buffer (lock-free) */
+                uint8_t idx = write_idx;
+                memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
 
                 /* Zero remaining channels beyond what this packet carried.
                  * Spec: controllers may send fewer than 512 slots. */
                 if (data_len < DMX_UNIVERSE_MAX_LENGTH) {
-                    memset(&shadow_buf[data_len], 0,
+                    memset(&pending_buf[idx][data_len], 0,
                            DMX_UNIVERSE_MAX_LENGTH - data_len);
                 }
-                osMutexRelease(shadow_mutex);
+
+                /* Publish: flip write_idx so Latch reads this buffer */
+                write_idx ^= 1;
 
                 /* Wake EffectTask */
                 if (notify_task != NULL) {
