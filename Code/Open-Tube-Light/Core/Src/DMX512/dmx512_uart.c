@@ -45,7 +45,7 @@
  */
 typedef enum {
     DMX512_STATE_IDLE,
-    DMX512_STATE_RECIEVING,
+    DMX512_STATE_RECEIVING,
 } DMX512_State_t;
 
 /* ========================== Private Buffers ========================== */
@@ -310,7 +310,7 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
 
         if (rdr_value == 0x00) {
             /* BREAK detected */
-            if (rx_state == DMX512_STATE_RECIEVING) {
+            if (rx_state == DMX512_STATE_RECEIVING) {
                 /* Process the previous packet that was being received.
                  * This handles MBB = 0 where transmitter goes directly from
                  * data into next Break with no IDLE gap (DMX512-A §8.9, Table 6 #10). */
@@ -322,14 +322,14 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             }
             /* Start receiving new packet */
             DMX512_Uart_StartDmaRx();
-            rx_state = DMX512_STATE_RECIEVING;
+            rx_state = DMX512_STATE_RECEIVING;
         } else {
             /* Non-zero FE: mid-packet corruption or line noise */
             
             midPcktErrCnt++; // DEBUGGING
             //return; // DEBUGGING
             
-            if (rx_state == DMX512_STATE_RECIEVING) {
+            if (rx_state == DMX512_STATE_RECEIVING) {
                 /* Corrupted data mid-packet; discard and resync at next Break */
                 HAL_UART_AbortReceive(dmx_huart);
                 rx_state = DMX512_STATE_IDLE;
@@ -344,7 +344,7 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
         /* Clear IDLE flag by writing 1 to IDLECF in ICR */
         SET_BIT(huart->Instance->ICR, USART_ICR_IDLECF);
 
-        if (rx_state == DMX512_STATE_RECIEVING) {
+        if (rx_state == DMX512_STATE_RECEIVING) {
             /* Calculate how many bytes DMA actually transferred.
              * DMA counter counts DOWN from DMX512_PACKET_MAX_SIZE. */
             uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
@@ -353,7 +353,7 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             /* Mark After Break (MAB) is detected as IDLE because the line
              * is HIGH for ~1.24ms, far exceeding the one-character-time
              * threshold (~44µs). If no bytes arrived yet, this is the MAB —
-             * stay in RECIEVING to catch the real end-of-packet. */
+             * stay in RECEIVING to catch the real end-of-packet. */
             if (received == 0) {
                 return;
             }
