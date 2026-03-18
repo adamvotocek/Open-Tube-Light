@@ -6,36 +6,22 @@
  * Break detection via Framing Error, end-of-packet via IDLE line.
  *
  * Buffer strategy:
- *   dma_rx_buf         → D2 SRAM (.uart_buffers, non-cacheable) — DMA writes here
- *   pending_buf[]      → DTCM (.DMX_Buffers) — ISR writes to one, Latch reads the other
- *   pending_data_len[] → tracks how many channels each pending buffer actually carries
- *   active_buf         → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
+ *   dma_rx_buf         → D2 SRAM (.uart_buffers, non-cacheable) — DMA target
+ *   pending_buf[]      → DTCM (.DMX_Buffers) — ISR double-buffer
+ *   pending_data_len[] → valid channel count per pending buffer
+ *   active_buf         → DTCM (.DMX_Buffers) — consumer reads after Latch
  *
- * Partial universe support:
- *   Transmitters may send fewer than 512 slots, or a mid-packet framing error
- *   may truncate reception. Rather than zeroing undelivered channels, the ISR
- *   records only the received portion into the pending buffer alongside its
- *   length. Latch() merges that partial data into active_buf, preserving
- *   previously-latched values for channels beyond the received range.
- *
- * ISR/thread synchronization uses a lock-free double-buffer swap.
+ * Partial universe: ISR stores only received channels + length. Latch()
+ * merges partial data into active_buf, preserving untouched channels.
  *
  * Priority architecture:
- *   UART5 ISR runs at priority 3 (above FreeRTOS BASEPRI threshold of 5)
- *   so it is never masked by critical sections. Because FreeRTOS APIs
- *   cannot be called above the threshold, task notification is deferred
- *   via software-pending DMA1_Stream1_IRQn (priority 5, FreeRTOS-safe).
- *   DMA TC/TE/DME interrupts are disabled after each HAL_UART_Receive_DMA
- *   so HAL_DMA_IRQHandler is a no-op when DMA1_Stream1 fires from our
- *   software pend — it checks __HAL_DMA_GET_IT_SOURCE which returns 0.
+ *   UART5 ISR at priority 3 (above FreeRTOS BASEPRI=5, never masked).
+ *   Task notification deferred via software-pended DMA1_Stream1_IRQn (prio 5).
+ *   DMA TC/TE/DME interrupts disabled so HAL_DMA_IRQHandler is a no-op.
  *
- * Known limitation — inter-slot IDLE sensitivity:
- *   End-of-packet is detected via the UART IDLE flag, which fires after
- *   one character time of bus inactivity (~44 µs at 250 kbaud). DMX512-A
- *   Table 7 allows inter-slot MARK time up to 1.00 s. If a transmitter
- *   inserts > 44 µs between any two slots, the IDLE handler fires
- *   mid-packet, truncating the frame. The vast majority of transmitters
- *   send slots back-to-back (inter-slot ≈ 0), so this is rarely an issue.
+ * Known limitation — IDLE sensitivity:
+ *   IDLE fires after one character time (~44 µs). Transmitters inserting
+ *   > 44 µs inter-slot gaps will cause mid-packet truncation. Rare in practice.
  */
 
 #include "DMX512/dmx512_uart.h"
@@ -53,45 +39,23 @@
 
 /* ========================== Private Types ========================== */
 
-/**
- * @brief ISR state machine states
- *
- * IDLE:            Waiting for Break (Framing Error).
- * BREAK_DETECTED:  Break seen, DMA restarted, waiting for data + IDLE.
- */
 typedef enum {
-    DMX512_STATE_IDLE,
-    DMX512_STATE_RECEIVING,
+    DMX512_STATE_IDLE,       /* Waiting for Break (Framing Error) */
+    DMX512_STATE_RECEIVING,  /* Break seen, DMA armed, awaiting data + IDLE */
 } DMX512_State_t;
 
 /* ========================== Private Buffers ========================== */
 
-/**
- * @brief DMA receive buffer in D2 SRAM (non-cacheable via MPU Region 1)
- *
- * 513 bytes: slot 0 (START code) + slots 1-512 (channel data).
- * Must be in D2 SRAM because the DMA controller accesses it via AHB
- * and the D-cache would cause coherency issues otherwise.
- */
+/** DMA target — D2 SRAM (non-cacheable via MPU) for DMA coherency */
 static uint8_t dma_rx_buf[DMX512_PACKET_MAX_SIZE]
     __attribute__((section(".uart_buffers"), aligned(32)));
 
-/**
- * @brief Double pending buffers — ISR writes one while Latch reads the other
- *
- * Contains channel data only (slots 1-512, no START code).
- * Placed in DTCM for zero-wait-state CPU access.
- * Lock-free: ISR writes to pending_buf[write_idx], then flips write_idx.
- * Latch reads from pending_buf[write_idx ^ 1] (the last completed buffer).
- */
+/** ISR double-buffer — channel data only (no START code). DTCM for zero-wait access.
+ *  Lock-free: ISR writes [write_idx], Latch reads [write_idx ^ 1]. */
 static uint8_t pending_buf[2][DMX_UNIVERSE_MAX_LENGTH]
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
-/**
- * @brief Active buffer — read by EffectTask during rendering
- *
- * Populated by Latch() from the last-completed pending buffer.
- */
+/** Consumer buffer — populated by Latch(), read by EffectTask */
 static uint8_t active_buf[DMX_UNIVERSE_MAX_LENGTH]
     __attribute__((section(".DMX_Buffers"), aligned(32)));
 
@@ -100,15 +64,10 @@ static uint8_t active_buf[DMX_UNIVERSE_MAX_LENGTH]
 static osThreadId_t notify_task;
 static UART_HandleTypeDef *dmx_huart;
 static volatile DMX512_State_t rx_state = DMX512_STATE_IDLE;
-static volatile uint8_t write_idx = 0;  /* ISR toggles after each complete write */
-static volatile bool initialized = false;
-
-/** @brief Number of valid channel bytes in each pending buffer.
- *  Written by ISR alongside pending_buf data, read by Latch(). */
-static volatile uint16_t pending_data_len[2] = {0, 0};
-
-/** @brief Set by UART5 ISR (above BASEPRI), consumed by deferred DMA1_Stream1 ISR */
-static volatile bool deferred_notify_flag = false;
+static volatile uint8_t  write_idx = 0;
+static volatile bool     initialized = false;
+static volatile uint16_t pending_data_len[2] = {0, 0}; /* valid bytes per pending_buf */
+static volatile bool     deferred_notify_flag = false;  /* UART5 ISR → DMA1_Stream1 ISR */
 
 // DEBUGGING GLOBAL
 static volatile uint16_t recievedData = 0;
@@ -117,12 +76,19 @@ static volatile uint16_t midPcktErrCnt = 0;
 
 /* ========================== Private Helpers ========================== */
 
+/** @brief Bytes DMA has transferred into dma_rx_buf so far */
+static uint16_t DMX512_Uart_DmaReceived(void)
+{
+    uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
+    return DMX512_PACKET_MAX_SIZE - remaining;
+}
+
 /**
- * @brief Start (or restart) DMA reception into dma_rx_buf
+ * @brief Abort in-flight DMA, re-arm for a new packet
  *
- * Aborts any in-flight DMA transfer, then re-arms for a new packet.
- * Re-enables EIE and IDLEIE after restart because HAL_UART_AbortReceive
- * clears EIE, and error paths in HAL can also clear it.
+ * Re-enables EIE + IDLEIE (HAL_UART_AbortReceive clears EIE).
+ * Disables DMA TC/TE/DME/HT interrupts to prevent HAL's DMA-complete
+ * callback from tearing down break detection.
  */
 static void DMX512_Uart_StartDmaRx(void)
 {
@@ -137,20 +103,17 @@ static void DMX512_Uart_StartDmaRx(void)
     CLEAR_BIT(((DMA_Stream_TypeDef *)dmx_huart->hdmarx->Instance)->CR,
               DMA_IT_TC | DMA_IT_TE | DMA_IT_DME | DMA_IT_HT);
 
-    /* HAL_UART_Receive_DMA re-enables EIE but not IDLEIE.
-     * Ensure both are set after every restart. */
     SET_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
     SET_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
 }
 
 /**
- * @brief Process a completed DMX packet from dma_rx_buf
+ * @brief Validate and publish a received DMX packet
  *
- * Validates NULL START code, copies channel data into the pending
- * double-buffer, and notifies EffectTask. Called from both the IDLE
- * handler (normal path) and the FE handler (MBB = 0 path).
+ * Checks NULL START code, copies channel data into the pending double-buffer,
+ * and defers task notification via software-pended DMA1_Stream1_IRQn.
  *
- * @param received  Number of bytes DMA transferred (including START code)
+ * @param received  Bytes DMA transferred (including START code)
  */
 static void DMX512_Uart_ProcessPacket(uint16_t received)
 {
@@ -158,50 +121,35 @@ static void DMX512_Uart_ProcessPacket(uint16_t received)
     if (received < 513) {
         smallFrameCnt++;
     }
-    
-    /* Need at least 2 bytes: START code + 1 data slot */
-    if (received >= 2 && dma_rx_buf[0] == 0x00) {
-        /* NULL START Code — copy channel data (skip slot 0).
-         * Clamp to 512 channels max. */
-        uint16_t data_len = received - 1;
-        if (data_len > DMX_UNIVERSE_MAX_LENGTH) {
-            data_len = DMX_UNIVERSE_MAX_LENGTH;
-        }
 
-        /* Write only the received channels into the pending buffer.
-         * Channels beyond data_len are left untouched — Latch() will
-         * merge this partial update into active_buf, preserving
-         * previously-latched values for the undelivered tail. */
-        uint8_t idx = write_idx;
-        memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
-        pending_data_len[idx] = data_len;
+    if (received < 2 || dma_rx_buf[0] != 0x00) return;
+    /* Non-NULL START codes silently ignored per DMX512-A §8.5.4 */
 
-        /* Publish: flip write_idx so Latch reads this buffer */
-        write_idx ^= 1;
-
-        /* Defer task notification: UART5 ISR runs above FreeRTOS BASEPRI
-         * so we cannot call osThreadFlagsSet here. Instead, set a flag
-         * and software-pend DMA1_Stream1_IRQn (priority 5, below BASEPRI)
-         * which will safely call osThreadFlagsSet on our behalf. */
-        deferred_notify_flag = true;
-        NVIC_SetPendingIRQ(DMA1_Stream1_IRQn);
+    uint16_t data_len = received - 1;
+    if (data_len > DMX_UNIVERSE_MAX_LENGTH) {
+        data_len = DMX_UNIVERSE_MAX_LENGTH;
     }
-    /* Non-NULL START codes are silently ignored per DMX512-A §8.5.4 */
+
+    /* Only received channels written; Latch() preserves the tail */
+    uint8_t idx = write_idx;
+    memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
+    pending_data_len[idx] = data_len;
+
+    /* Publish: flip write_idx so Latch reads this buffer */
+    write_idx ^= 1;
+
+    /* Defer notification — can't call FreeRTOS APIs above BASEPRI */
+    deferred_notify_flag = true;
+    NVIC_SetPendingIRQ(DMA1_Stream1_IRQn);
 }
 
 /* ========================== Vtable Functions ========================== */
 
-/**
- * @brief Initialize DMX512 UART reception
- *
- * Zeros buffers, enables FE + IDLE interrupts, starts DMA.
- * UART5 peripheral must already be initialized by CubeMX (MX_UART5_Init).
- */
+/** @brief Initialize UART reception. UART5 must already be configured by CubeMX. */
 static int DMX512_Uart_Init(osThreadId_t task)
 {
     if (initialized) return 0;
 
-    /* Reference the UART5 handle defined in main.c */
     extern UART_HandleTypeDef huart5;
     dmx_huart   = &huart5;
     notify_task = task;
@@ -213,35 +161,27 @@ static int DMX512_Uart_Init(osThreadId_t task)
     pending_data_len[0] = 0;
     pending_data_len[1] = 0;
     write_idx = 0;
-
     deferred_notify_flag = false;
 
-    /* Start DMA reception — arms the DMA stream for the first packet */
     DMX512_Uart_StartDmaRx();
 
     initialized = true;
     return 0;
 }
 
-/**
- * @brief Tear down DMX512 UART reception
- *
- * Stops DMA, disables ISR flags, zeros buffers.
- * Safe to call when not initialized.
- */
+/** @brief Tear down reception. Safe to call when not initialized. */
 static void DMX512_Uart_Deinit(void)
 {
     if (!initialized) return;
-    
+
     initialized = false;
 
     /* Disable custom interrupt sources before stopping DMA */
     CLEAR_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
     CLEAR_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
-
     HAL_UART_AbortReceive(dmx_huart);
 
-    /* Zero buffers so lights go dark on protocol switch (safety) */
+    /* Zero buffers so lights go dark on protocol switch */
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
@@ -255,14 +195,11 @@ static void DMX512_Uart_Deinit(void)
 }
 
 /**
- * @brief Latch most recent pending buffer into active buffer
+ * @brief Merge most recent pending buffer into active buffer
  *
- * Reads from the last buffer the ISR completed (write_idx ^ 1).
- * Only overwrites the channels that the packet actually carried,
- * so channels beyond the received range retain their previous values.
- *
- * Lock-free: ISR only ever writes to pending_buf[write_idx], which
- * is the OTHER buffer, so no torn read is possible.
+ * Only overwrites channels the packet carried — untouched channels
+ * retain their previous values. Lock-free: ISR writes [write_idx],
+ * Latch reads [write_idx ^ 1].
  */
 static void DMX512_Uart_Latch(void)
 {
@@ -275,32 +212,103 @@ static void DMX512_Uart_Latch(void)
     }
 }
 
-/**
- * @brief Get pointer to active DMX data
- *
- * DMX512 over UART is single-universe; only index 0 is valid.
- */
+/** @brief Single-universe driver; only index 0 is valid. */
 static const uint8_t* DMX512_Uart_GetUniverse(uint8_t universe)
 {
     if (universe != 0) return NULL;
     return active_buf;
 }
 
+/* ========================== ISR Sub-handlers ========================== */
+
+/**
+ * @brief Handle ORE / NE / PE — clear before HAL sees them
+ *
+ * HAL's error path calls UART_EndRxTransfer() which disables EIE and
+ * aborts DMA, permanently killing break detection.
+ *
+ * @return true on ORE (caller must exit ISR), false to fall through
+ */
+static bool DMX512_Uart_HandleErrors(UART_HandleTypeDef *huart, uint32_t isr)
+{
+    SET_BIT(huart->Instance->ICR,
+            USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_PECF);
+
+    if (isr & USART_ISR_ORE) {
+        /* Byte lost → packet data shifted, discard and resync */
+        DMX512_Uart_StartDmaRx();
+        rx_state = DMX512_STATE_IDLE;
+        return true;
+    }
+    /* NE/PE alone: noisy byte, UART continues — fall through */
+    return false;
+}
+
+/**
+ * @brief Handle Framing Error — Break detection or mid-packet corruption
+ *
+ * FE + RDR==0x00: valid Break. Process any in-flight packet (MBB=0
+ * per DMX512-A §8.9), then restart DMA for the new packet.
+ * FE + RDR!=0x00: corruption. Salvage clean prefix (§9.1), then resync.
+ */
+static void DMX512_Uart_HandleFramingError(UART_HandleTypeDef *huart)
+{
+    SET_BIT(huart->Instance->ICR, USART_ICR_FECF);
+    uint8_t rdr = (uint8_t)READ_REG(huart->Instance->RDR);
+
+    if (rdr == 0x00) {
+        /* Valid Break — flush any in-flight packet, then start fresh */
+        if (rx_state == DMX512_STATE_RECEIVING) {
+            uint16_t received = DMX512_Uart_DmaReceived();
+            if (received > 0) {
+                DMX512_Uart_ProcessPacket(received);
+            }
+        }
+        DMX512_Uart_StartDmaRx();
+        rx_state = DMX512_STATE_RECEIVING;
+        return;
+    }
+
+    /* Non-zero FE: mid-packet corruption or line noise */
+    midPcktErrCnt++; // DEBUGGING
+
+    if (rx_state == DMX512_STATE_RECEIVING) {
+        /* Salvage clean bytes before the corrupted slot (§9.1) */
+        uint16_t received = DMX512_Uart_DmaReceived();
+        if (received >= 2) {
+            DMX512_Uart_ProcessPacket(received);
+        }
+        DMX512_Uart_StartDmaRx();
+        rx_state = DMX512_STATE_IDLE;
+    }
+}
+
+/**
+ * @brief Handle IDLE line — end-of-packet detection
+ *
+ * MAB also triggers IDLE (~1.24 ms HIGH). If no bytes received yet,
+ * this is the MAB — stay in RECEIVING for the real end-of-packet.
+ */
+static void DMX512_Uart_HandleIdle(UART_HandleTypeDef *huart)
+{
+    SET_BIT(huart->Instance->ICR, USART_ICR_IDLECF);
+
+    if (rx_state != DMX512_STATE_RECEIVING) return;
+
+    uint16_t received = DMX512_Uart_DmaReceived();
+    if (received == 0) return;  /* MAB, not end-of-packet */
+
+    DMX512_Uart_ProcessPacket(received);
+    rx_state = DMX512_STATE_IDLE;
+}
+
 /* ========================== ISR Handler ========================== */
 
 /**
- * @brief Custom UART ISR for DMX512 Break/IDLE detection
+ * @brief Custom UART ISR — called from UART5_IRQHandler before HAL
  *
- * Called from UART5_IRQHandler before HAL_UART_IRQHandler.
- * Reads ISR register directly for lowest latency. Handles:
- *   - ORE/NE/PE: Cleared immediately to prevent HAL_UART_IRQHandler from
- *     seeing them. HAL's error path calls UART_EndRxTransfer() which disables
- *     EIE (kills break detection) and aborts DMA — unrecoverable without this.
- *   - Framing Error (FE): Break detection / mid-packet corruption
- *   - IDLE flag: end-of-packet, calculates byte count from DMA counter
- *
- * Must NOT block — defers task notification via software-pended
- * DMA1_Stream1_IRQn (see DMX512_Uart_DeferredNotify).
+ * Dispatches to focused sub-handlers for each flag type.
+ * Must NOT block — task notification deferred via DMA1_Stream1_IRQn.
  */
 void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
 {
@@ -308,109 +316,25 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
 
     uint32_t isr = READ_REG(huart->Instance->ISR);
 
-    /* ---- Clear ORE / NE / PE before HAL sees them ----
-     * Cable disconnect/reconnect causes noise that triggers ORE (overrun)
-     * or NE (noise). If HAL_UART_IRQHandler handles these, it calls
-     * UART_EndRxTransfer() which clears CR3.EIE and aborts DMA,
-     * permanently disabling break detection. */
     if (isr & (USART_ISR_ORE | USART_ISR_NE | USART_ISR_PE)) {
-        SET_BIT(huart->Instance->ICR,
-                USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_PECF);
-
-        if (isr & USART_ISR_ORE) {
-            /* Overrun: a byte was lost, current packet data is shifted.
-             * Discard this packet and wait for next Break to resync. */
-            DMX512_Uart_StartDmaRx();
-            rx_state = DMX512_STATE_IDLE;
-            return;
-        }
-        /* NE/PE alone: byte may be noisy but UART continues operating.
-         * Fall through to FE/IDLE handling — let Break resync naturally. */
+        if (DMX512_Uart_HandleErrors(huart, isr)) return;
     }
 
-    /* ---- Framing Error: Break detection ---- */
     if (isr & USART_ISR_FE) {
-        /* Clear FE flag by writing 1 to FECF in ICR */
-        SET_BIT(huart->Instance->ICR, USART_ICR_FECF);
-
-        /* Read RDR to check if FE is a valid BREAK (0x00) */
-        uint8_t rdr_value = (uint8_t)READ_REG(huart->Instance->RDR);
-
-        if (rdr_value == 0x00) {
-            /* BREAK detected */
-            if (rx_state == DMX512_STATE_RECEIVING) {
-                /* Process the previous packet that was being received.
-                 * This handles MBB = 0 where transmitter goes directly from
-                 * data into next Break with no IDLE gap (DMX512-A §8.9, Table 6 #10). */
-                uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
-                uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
-                if (received > 0) {
-                    DMX512_Uart_ProcessPacket(received);
-                }
-            }
-            /* Start receiving new packet */
-            DMX512_Uart_StartDmaRx();
-            rx_state = DMX512_STATE_RECEIVING;
-        } else {
-            /* Non-zero FE: mid-packet corruption or line noise */
-            
-            midPcktErrCnt++; // DEBUGGING
-            //return; // DEBUGGING
-            
-            if (rx_state == DMX512_STATE_RECEIVING) {
-                /* Salvage the clean prefix before the corrupted slot.
-                 * DMX512-A §9.1: discard the bad slot and all following
-                 * slots — but the bytes before it are valid. */
-                uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
-                uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
-                if (received >= 2) {
-                    DMX512_Uart_ProcessPacket(received);
-                }
-                DMX512_Uart_StartDmaRx();
-                rx_state = DMX512_STATE_IDLE;
-            }
-            /* If idle, spurious error on idle line — ignore and stay idle */
-        }
+        DMX512_Uart_HandleFramingError(huart);
         return;
     }
 
-    /* ---- IDLE line: end-of-packet ---- */
     if (isr & USART_ISR_IDLE) {
-        /* Clear IDLE flag by writing 1 to IDLECF in ICR */
-        SET_BIT(huart->Instance->ICR, USART_ICR_IDLECF);
-
-        if (rx_state == DMX512_STATE_RECEIVING) {
-            /* Calculate how many bytes DMA actually transferred.
-             * DMA counter counts DOWN from DMX512_PACKET_MAX_SIZE. */
-            uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
-            uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
-
-            /* Mark After Break (MAB) is detected as IDLE because the line
-             * is HIGH for ~1.24ms, far exceeding the one-character-time
-             * threshold (~44µs). If no bytes arrived yet, this is the MAB —
-             * stay in RECEIVING to catch the real end-of-packet. */
-            if (received == 0) {
-                return;
-            }
-
-            DMX512_Uart_ProcessPacket(received);
-
-            /* Return to idle state, waiting for next Break */
-            rx_state = DMX512_STATE_IDLE;
-        }
+        DMX512_Uart_HandleIdle(huart);
     }
 }
 
 /* ========================== Deferred Notification ========================== */
 
 /**
- * @brief Deferred ISR notification handler
- *
- * Called from DMA1_Stream1_IRQHandler (priority 5, below FreeRTOS BASEPRI).
- * Consumes the flag set by the UART5 ISR and calls osThreadFlagsSet,
- * which is only safe at priority >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
- *
- * @return true if notification was handled (caller should skip HAL_DMA_IRQHandler)
+ * @brief Deferred notification from UART5 ISR → FreeRTOS-safe context
+ * @return true if handled (caller should skip HAL_DMA_IRQHandler)
  */
 bool DMX512_Uart_DeferredNotify(void)
 {
