@@ -17,6 +17,7 @@
 #define INC_DMX512_UART_H_
 
 #include "stm32h7xx_hal.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +43,17 @@ extern "C" {
  * @param huart UART handle (must be the UART5 instance)
  */
 void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart);
+
+/**
+ * @brief Deferred notification handler for DMA1_Stream1_IRQHandler
+ *
+ * Since UART5 ISR runs above FreeRTOS BASEPRI (priority 3), it cannot
+ * call FreeRTOS APIs. Instead it software-pends DMA1_Stream1_IRQn.
+ * Call this from DMA1_Stream1_IRQHandler before HAL_DMA_IRQHandler.
+ *
+ * @return true if notification was handled (caller should return early)
+ */
+bool DMX512_Uart_DeferredNotify(void);
 
 #ifdef __cplusplus
 }

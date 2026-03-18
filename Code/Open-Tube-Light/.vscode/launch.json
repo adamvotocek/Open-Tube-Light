@@ -17,7 +17,11 @@
                 {
                     "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
                 }
-            ]
+            ],
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": "20"
+            }
         }
     ]
 }
