@@ -6,9 +6,17 @@
  * Break detection via Framing Error, end-of-packet via IDLE line.
  *
  * Buffer strategy:
- *   dma_rx_buf    → D2 SRAM (.uart_buffers, non-cacheable) — DMA writes here
- *   pending_buf[] → DTCM (.DMX_Buffers) — ISR writes to one, Latch reads the other
- *   active_buf    → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
+ *   dma_rx_buf         → D2 SRAM (.uart_buffers, non-cacheable) — DMA writes here
+ *   pending_buf[]      → DTCM (.DMX_Buffers) — ISR writes to one, Latch reads the other
+ *   pending_data_len[] → tracks how many channels each pending buffer actually carries
+ *   active_buf         → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
+ *
+ * Partial universe support:
+ *   Transmitters may send fewer than 512 slots, or a mid-packet framing error
+ *   may truncate reception. Rather than zeroing undelivered channels, the ISR
+ *   records only the received portion into the pending buffer alongside its
+ *   length. Latch() merges that partial data into active_buf, preserving
+ *   previously-latched values for channels beyond the received range.
  *
  * ISR/thread synchronization uses a lock-free double-buffer swap.
  *
@@ -95,6 +103,10 @@ static volatile DMX512_State_t rx_state = DMX512_STATE_IDLE;
 static volatile uint8_t write_idx = 0;  /* ISR toggles after each complete write */
 static volatile bool initialized = false;
 
+/** @brief Number of valid channel bytes in each pending buffer.
+ *  Written by ISR alongside pending_buf data, read by Latch(). */
+static volatile uint16_t pending_data_len[2] = {0, 0};
+
 /** @brief Set by UART5 ISR (above BASEPRI), consumed by deferred DMA1_Stream1 ISR */
 static volatile bool deferred_notify_flag = false;
 
@@ -156,16 +168,13 @@ static void DMX512_Uart_ProcessPacket(uint16_t received)
             data_len = DMX_UNIVERSE_MAX_LENGTH;
         }
 
-        /* Write to the current pending buffer (lock-free) */
+        /* Write only the received channels into the pending buffer.
+         * Channels beyond data_len are left untouched — Latch() will
+         * merge this partial update into active_buf, preserving
+         * previously-latched values for the undelivered tail. */
         uint8_t idx = write_idx;
         memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
-
-        /* Zero remaining channels beyond what this packet carried.
-         * Spec: controllers may send fewer than 512 slots. */
-        if (data_len < DMX_UNIVERSE_MAX_LENGTH) {
-            memset(&pending_buf[idx][data_len], 0,
-                   DMX_UNIVERSE_MAX_LENGTH - data_len);
-        }
+        pending_data_len[idx] = data_len;
 
         /* Publish: flip write_idx so Latch reads this buffer */
         write_idx ^= 1;
@@ -201,6 +210,8 @@ static int DMX512_Uart_Init(osThreadId_t task)
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
+    pending_data_len[0] = 0;
+    pending_data_len[1] = 0;
     write_idx = 0;
 
     deferred_notify_flag = false;
@@ -247,13 +258,21 @@ static void DMX512_Uart_Deinit(void)
  * @brief Latch most recent pending buffer into active buffer
  *
  * Reads from the last buffer the ISR completed (write_idx ^ 1).
+ * Only overwrites the channels that the packet actually carried,
+ * so channels beyond the received range retain their previous values.
+ *
  * Lock-free: ISR only ever writes to pending_buf[write_idx], which
  * is the OTHER buffer, so no torn read is possible.
  */
 static void DMX512_Uart_Latch(void)
 {
-    uint8_t read_idx = write_idx ^ 1;
-    memcpy(active_buf, pending_buf[read_idx], DMX_UNIVERSE_MAX_LENGTH);
+    uint8_t  read_idx = write_idx ^ 1;
+    uint16_t len      = pending_data_len[read_idx];
+
+    if (len > 0) {
+        memcpy(active_buf, pending_buf[read_idx], len);
+        /* active_buf[len..511] retains values from the previous Latch */
+    }
 }
 
 /**
@@ -339,8 +358,14 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             //return; // DEBUGGING
             
             if (rx_state == DMX512_STATE_RECEIVING) {
-                /* Corrupted data mid-packet; discard and resync at next Break */
-                //HAL_UART_AbortReceive(dmx_huart);
+                /* Salvage the clean prefix before the corrupted slot.
+                 * DMX512-A §9.1: discard the bad slot and all following
+                 * slots — but the bytes before it are valid. */
+                uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
+                uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
+                if (received >= 2) {
+                    DMX512_Uart_ProcessPacket(received);
+                }
                 DMX512_Uart_StartDmaRx();
                 rx_state = DMX512_STATE_IDLE;
             }
