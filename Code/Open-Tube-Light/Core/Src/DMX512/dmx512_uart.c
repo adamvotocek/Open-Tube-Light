@@ -20,6 +20,14 @@
  *   DMA TC/TE/DME interrupts are disabled after each HAL_UART_Receive_DMA
  *   so HAL_DMA_IRQHandler is a no-op when DMA1_Stream1 fires from our
  *   software pend — it checks __HAL_DMA_GET_IT_SOURCE which returns 0.
+ *
+ * Known limitation — inter-slot IDLE sensitivity:
+ *   End-of-packet is detected via the UART IDLE flag, which fires after
+ *   one character time of bus inactivity (~44 µs at 250 kbaud). DMX512-A
+ *   Table 7 allows inter-slot MARK time up to 1.00 s. If a transmitter
+ *   inserts > 44 µs between any two slots, the IDLE handler fires
+ *   mid-packet, truncating the frame. The vast majority of transmitters
+ *   send slots back-to-back (inter-slot ≈ 0), so this is rarely an issue.
  */
 
 #include "DMX512/dmx512_uart.h"
@@ -213,6 +221,8 @@ static int DMX512_Uart_Init(osThreadId_t task)
 static void DMX512_Uart_Deinit(void)
 {
     if (!initialized) return;
+    
+    initialized = false;
 
     /* Disable custom interrupt sources before stopping DMA */
     CLEAR_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
@@ -231,7 +241,6 @@ static void DMX512_Uart_Deinit(void)
     notify_task = NULL;
     dmx_huart   = NULL;
     rx_state    = DMX512_STATE_IDLE;
-    initialized = false;
 }
 
 /**
@@ -331,7 +340,8 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             
             if (rx_state == DMX512_STATE_RECEIVING) {
                 /* Corrupted data mid-packet; discard and resync at next Break */
-                HAL_UART_AbortReceive(dmx_huart);
+                //HAL_UART_AbortReceive(dmx_huart);
+                DMX512_Uart_StartDmaRx();
                 rx_state = DMX512_STATE_IDLE;
             }
             /* If idle, spurious error on idle line — ignore and stay idle */
