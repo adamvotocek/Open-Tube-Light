@@ -45,7 +45,7 @@
  */
 typedef enum {
     DMX512_STATE_IDLE,
-    DMX512_STATE_BREAK_DETECTED,
+    DMX512_STATE_RECIEVING,
 } DMX512_State_t;
 
 /* ========================== Private Buffers ========================== */
@@ -91,7 +91,9 @@ static volatile bool initialized = false;
 static volatile bool deferred_notify_flag = false;
 
 // DEBUGGING GLOBAL
-static volatile uint32_t recievedData = 0;
+static volatile uint16_t recievedData = 0;
+static volatile uint16_t smallFrameCnt = 0;
+static volatile uint16_t midPcktErrCnt = 0;
 
 /* ========================== Private Helpers ========================== */
 
@@ -133,6 +135,9 @@ static void DMX512_Uart_StartDmaRx(void)
 static void DMX512_Uart_ProcessPacket(uint16_t received)
 {
     recievedData = received; // DEBUGGING
+    if (received < 513) {
+        smallFrameCnt++;
+    }
     
     /* Need at least 2 bytes: START code + 1 data slot */
     if (received >= 2 && dma_rx_buf[0] == 0x00) {
@@ -194,14 +199,6 @@ static int DMX512_Uart_Init(osThreadId_t task)
 
     /* Start DMA reception — arms the DMA stream for the first packet */
     DMX512_Uart_StartDmaRx();
-
-    /* Enable Error Interrupt Enable (EIE) for Framing Error during DMA.
-     * HAL does not enable this automatically; without it, FE during
-     * DMA reception doesn't trigger the UART IRQ. */
-    SET_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
-
-    /* Enable IDLE line interrupt for end-of-packet detection */
-    SET_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
 
     initialized = true;
     return 0;
@@ -308,29 +305,36 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
         /* Clear FE flag by writing 1 to FECF in ICR */
         SET_BIT(huart->Instance->ICR, USART_ICR_FECF);
 
-        /* Also read RDR to clear RXNE so the bogus break byte
-         * doesn't sit in the data register */
-        (void)READ_REG(huart->Instance->RDR);
+        /* Read RDR to check if FE is a valid BREAK (0x00) */
+        uint8_t rdr_value = (uint8_t)READ_REG(huart->Instance->RDR);
 
-        if (rx_state == DMX512_STATE_IDLE || rx_state == DMX512_STATE_BREAK_DETECTED) {
-            /* If we already had a Break and DMA captured data, process the
-             * previous packet before restarting. This handles MBB = 0 where
-             * the transmitter goes directly from data into the next Break
-             * with no IDLE gap (DMX512-A §8.9, Table 6 Designation #10). */
-            if (rx_state == DMX512_STATE_BREAK_DETECTED) {
+        if (rdr_value == 0x00) {
+            /* BREAK detected */
+            if (rx_state == DMX512_STATE_RECIEVING) {
+                /* Process the previous packet that was being received.
+                 * This handles MBB = 0 where transmitter goes directly from
+                 * data into next Break with no IDLE gap (DMX512-A §8.9, Table 6 #10). */
                 uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
                 uint16_t received  = DMX512_PACKET_MAX_SIZE - remaining;
                 if (received > 0) {
                     DMX512_Uart_ProcessPacket(received);
                 }
             }
-
+            /* Start receiving new packet */
             DMX512_Uart_StartDmaRx();
-            rx_state = DMX512_STATE_BREAK_DETECTED;
+            rx_state = DMX512_STATE_RECIEVING;
         } else {
-            /* Mid-packet FE — corrupted data, discard and wait for next Break */
-            HAL_UART_AbortReceive(dmx_huart);
-            rx_state = DMX512_STATE_IDLE;
+            /* Non-zero FE: mid-packet corruption or line noise */
+            
+            midPcktErrCnt++; // DEBUGGING
+            //return; // DEBUGGING
+            
+            if (rx_state == DMX512_STATE_RECIEVING) {
+                /* Corrupted data mid-packet; discard and resync at next Break */
+                HAL_UART_AbortReceive(dmx_huart);
+                rx_state = DMX512_STATE_IDLE;
+            }
+            /* If idle, spurious error on idle line — ignore and stay idle */
         }
         return;
     }
@@ -340,7 +344,7 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
         /* Clear IDLE flag by writing 1 to IDLECF in ICR */
         SET_BIT(huart->Instance->ICR, USART_ICR_IDLECF);
 
-        if (rx_state == DMX512_STATE_BREAK_DETECTED) {
+        if (rx_state == DMX512_STATE_RECIEVING) {
             /* Calculate how many bytes DMA actually transferred.
              * DMA counter counts DOWN from DMX512_PACKET_MAX_SIZE. */
             uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
@@ -349,12 +353,14 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             /* Mark After Break (MAB) is detected as IDLE because the line
              * is HIGH for ~1.24ms, far exceeding the one-character-time
              * threshold (~44µs). If no bytes arrived yet, this is the MAB —
-             * stay in BREAK_DETECTED so we catch the real end-of-packet. */
+             * stay in RECIEVING to catch the real end-of-packet. */
             if (received == 0) {
                 return;
             }
 
             DMX512_Uart_ProcessPacket(received);
+
+            /* Return to idle state, waiting for next Break */
             rx_state = DMX512_STATE_IDLE;
         }
     }
