@@ -11,12 +11,22 @@
  *   active_buf    → DTCM (.DMX_Buffers) — EffectTask reads from here after latch
  *
  * ISR/thread synchronization uses a lock-free double-buffer swap.
+ *
+ * Priority architecture:
+ *   UART5 ISR runs at priority 3 (above FreeRTOS BASEPRI threshold of 5)
+ *   so it is never masked by critical sections. Because FreeRTOS APIs
+ *   cannot be called above the threshold, task notification is deferred
+ *   via software-pending DMA1_Stream1_IRQn (priority 5, FreeRTOS-safe).
+ *   DMA TC/TE/DME interrupts are disabled after each HAL_UART_Receive_DMA
+ *   so HAL_DMA_IRQHandler is a no-op when DMA1_Stream1 fires from our
+ *   software pend — it checks __HAL_DMA_GET_IT_SOURCE which returns 0.
  */
 
 #include "DMX512/dmx512_uart.h"
 #include "dmx_input.h"
 #include "device_config.h"
 #include "cmsis_os2.h"
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -32,12 +42,10 @@
  *
  * IDLE:            Waiting for Break (Framing Error).
  * BREAK_DETECTED:  Break seen, DMA restarted, waiting for data + IDLE.
- * RECEIVING:       DMA capturing slot data after valid START code byte.
  */
 typedef enum {
     DMX512_STATE_IDLE,
     DMX512_STATE_BREAK_DETECTED,
-    DMX512_STATE_RECEIVING,
 } DMX512_State_t;
 
 /* ========================== Private Buffers ========================== */
@@ -79,6 +87,12 @@ static volatile DMX512_State_t rx_state = DMX512_STATE_IDLE;
 static volatile uint8_t write_idx = 0;  /* ISR toggles after each complete write */
 static volatile bool initialized = false;
 
+/** @brief Set by UART5 ISR (above BASEPRI), consumed by deferred DMA1_Stream1 ISR */
+static volatile bool deferred_notify_flag = false;
+
+// DEBUGGING GLOBAL
+static volatile uint32_t recievedData = 0;
+
 /* ========================== Private Helpers ========================== */
 
 /**
@@ -92,6 +106,14 @@ static void DMX512_Uart_StartDmaRx(void)
 {
     HAL_UART_AbortReceive(dmx_huart);
     HAL_UART_Receive_DMA(dmx_huart, dma_rx_buf, DMX512_PACKET_MAX_SIZE);
+
+    /* Disable DMA TC/TE/DME interrupts. Without this, a full 513-byte
+     * packet triggers HAL's UART_DMAReceiveCplt which clears EIE/IDLEIE
+     * and sets RxState=READY — permanently killing break detection.
+     * HAL_DMA_IRQHandler checks __HAL_DMA_GET_IT_SOURCE before acting,
+     * so with these bits cleared the handler is a safe no-op. */
+    CLEAR_BIT(((DMA_Stream_TypeDef *)dmx_huart->hdmarx->Instance)->CR,
+              DMA_IT_TC | DMA_IT_TE | DMA_IT_DME | DMA_IT_HT);
 
     /* HAL_UART_Receive_DMA re-enables EIE but not IDLEIE.
      * Ensure both are set after every restart. */
@@ -110,6 +132,8 @@ static void DMX512_Uart_StartDmaRx(void)
  */
 static void DMX512_Uart_ProcessPacket(uint16_t received)
 {
+    recievedData = received; // DEBUGGING
+    
     /* Need at least 2 bytes: START code + 1 data slot */
     if (received >= 2 && dma_rx_buf[0] == 0x00) {
         /* NULL START Code — copy channel data (skip slot 0).
@@ -133,10 +157,12 @@ static void DMX512_Uart_ProcessPacket(uint16_t received)
         /* Publish: flip write_idx so Latch reads this buffer */
         write_idx ^= 1;
 
-        /* Wake EffectTask */
-        if (notify_task != NULL) {
-            osThreadFlagsSet(notify_task, DMX512_THREAD_FLAG_FRAME_READY);
-        }
+        /* Defer task notification: UART5 ISR runs above FreeRTOS BASEPRI
+         * so we cannot call osThreadFlagsSet here. Instead, set a flag
+         * and software-pend DMA1_Stream1_IRQn (priority 5, below BASEPRI)
+         * which will safely call osThreadFlagsSet on our behalf. */
+        deferred_notify_flag = true;
+        NVIC_SetPendingIRQ(DMA1_Stream1_IRQn);
     }
     /* Non-NULL START codes are silently ignored per DMX512-A §8.5.4 */
 }
@@ -163,6 +189,8 @@ static int DMX512_Uart_Init(osThreadId_t task)
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
     write_idx = 0;
+
+    deferred_notify_flag = false;
 
     /* Start DMA reception — arms the DMA stream for the first packet */
     DMX512_Uart_StartDmaRx();
@@ -199,6 +227,9 @@ static void DMX512_Uart_Deinit(void)
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
+
+    deferred_notify_flag = false;
+    NVIC_ClearPendingIRQ(DMA1_Stream1_IRQn);
 
     notify_task = NULL;
     dmx_huart   = NULL;
@@ -243,7 +274,8 @@ static const uint8_t* DMX512_Uart_GetUniverse(uint8_t universe)
  *   - Framing Error (FE): Break detection / mid-packet corruption
  *   - IDLE flag: end-of-packet, calculates byte count from DMA counter
  *
- * Must NOT block — uses osThreadFlagsSet (ISR-safe) for notification.
+ * Must NOT block — defers task notification via software-pended
+ * DMA1_Stream1_IRQn (see DMX512_Uart_DeferredNotify).
  */
 void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
 {
@@ -326,6 +358,28 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
             rx_state = DMX512_STATE_IDLE;
         }
     }
+}
+
+/* ========================== Deferred Notification ========================== */
+
+/**
+ * @brief Deferred ISR notification handler
+ *
+ * Called from DMA1_Stream1_IRQHandler (priority 5, below FreeRTOS BASEPRI).
+ * Consumes the flag set by the UART5 ISR and calls osThreadFlagsSet,
+ * which is only safe at priority >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
+ *
+ * @return true if notification was handled (caller should skip HAL_DMA_IRQHandler)
+ */
+bool DMX512_Uart_DeferredNotify(void)
+{
+    if (!deferred_notify_flag) return false;
+    deferred_notify_flag = false;
+
+    if (notify_task != NULL) {
+        osThreadFlagsSet(notify_task, DMX512_THREAD_FLAG_FRAME_READY);
+    }
+    return true;
 }
 
 /* ========================== Driver Vtable ========================== */
