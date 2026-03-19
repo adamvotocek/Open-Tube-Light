@@ -37,12 +37,38 @@
 /** @brief Thread notification flag matching EffectTask convention */
 #define DMX512_THREAD_FLAG_FRAME_READY  0x01U
 
+/** @brief Full DMX512 packet size: 1 START code byte + 512 data slots (DMA buffer length) */
+#define DMX512_PACKET_MAX_SIZE          513U
+
+/** @brief Expected START code value for normal DMX data (DMX512-A §8.5.4) */
+#define DMX512_START_CODE_VALUE         0x00U
+
+/** @brief Byte offset from packet start to first channel data slot */
+#define DMX512_DATA_OFFSET              1U
+
 /* ========================== Private Types ========================== */
 
 typedef enum {
     DMX512_STATE_IDLE,       /* Waiting for Break (Framing Error) */
     DMX512_STATE_RECEIVING,  /* Break seen, DMA armed, awaiting data + IDLE */
 } DMX512_State_t;
+
+/**
+ * @brief All mutable driver state in one place
+ *
+ * Fields below the ISR separator are written from the UART5 ISR (priority 3,
+ * above FreeRTOS BASEPRI=5) and must be declared volatile.
+ */
+typedef struct {
+    UART_HandleTypeDef *huart;
+    osThreadId_t        notify_task;
+    bool                initialized;
+    /* ISR-written — UART5 runs above FreeRTOS BASEPRI, never masked */
+    volatile DMX512_State_t rx_state;
+    volatile uint8_t        write_idx;
+    volatile uint16_t       pending_data_len[2]; /* valid bytes per pending_buf slot */
+    volatile bool           deferred_notify_flag; /* UART5 ISR → DMA1_Stream1 ISR */
+} DMX512_Uart_Context_t;
 
 /* ========================== Private Buffers ========================== */
 
@@ -61,25 +87,20 @@ static uint8_t active_buf[DMX_UNIVERSE_MAX_LENGTH]
 
 /* ========================== Private State ========================== */
 
-static osThreadId_t notify_task;
-static UART_HandleTypeDef *dmx_huart;
-static volatile DMX512_State_t rx_state = DMX512_STATE_IDLE;
-static volatile uint8_t  write_idx = 0;
-static volatile bool     initialized = false;
-static volatile uint16_t pending_data_len[2] = {0, 0}; /* valid bytes per pending_buf */
-static volatile bool     deferred_notify_flag = false;  /* UART5 ISR → DMA1_Stream1 ISR */
+static DMX512_Uart_Context_t ctx;
 
-// DEBUGGING GLOBAL
-static volatile uint16_t recievedData = 0;
+#ifdef DEBUG
+static volatile uint16_t receivedData  = 0;
 static volatile uint16_t smallFrameCnt = 0;
 static volatile uint16_t midPcktErrCnt = 0;
+#endif
 
 /* ========================== Private Helpers ========================== */
 
 /** @brief Bytes DMA has transferred into dma_rx_buf so far */
 static uint16_t DMX512_Uart_DmaReceived(void)
 {
-    uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(dmx_huart->hdmarx);
+    uint16_t remaining = (uint16_t)__HAL_DMA_GET_COUNTER(ctx.huart->hdmarx);
     return DMX512_PACKET_MAX_SIZE - remaining;
 }
 
@@ -92,19 +113,19 @@ static uint16_t DMX512_Uart_DmaReceived(void)
  */
 static void DMX512_Uart_StartDmaRx(void)
 {
-    HAL_UART_AbortReceive(dmx_huart);
-    HAL_UART_Receive_DMA(dmx_huart, dma_rx_buf, DMX512_PACKET_MAX_SIZE);
+    HAL_UART_AbortReceive(ctx.huart);
+    HAL_UART_Receive_DMA(ctx.huart, dma_rx_buf, DMX512_PACKET_MAX_SIZE);
 
     /* Disable DMA TC/TE/DME interrupts. Without this, a full 513-byte
      * packet triggers HAL's UART_DMAReceiveCplt which clears EIE/IDLEIE
      * and sets RxState=READY — permanently killing break detection.
      * HAL_DMA_IRQHandler checks __HAL_DMA_GET_IT_SOURCE before acting,
      * so with these bits cleared the handler is a safe no-op. */
-    CLEAR_BIT(((DMA_Stream_TypeDef *)dmx_huart->hdmarx->Instance)->CR,
+    CLEAR_BIT(((DMA_Stream_TypeDef *)ctx.huart->hdmarx->Instance)->CR,
               DMA_IT_TC | DMA_IT_TE | DMA_IT_DME | DMA_IT_HT);
 
-    SET_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
-    SET_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
+    SET_BIT(ctx.huart->Instance->CR3, USART_CR3_EIE);
+    SET_BIT(ctx.huart->Instance->CR1, USART_CR1_IDLEIE);
 }
 
 /**
@@ -117,29 +138,32 @@ static void DMX512_Uart_StartDmaRx(void)
  */
 static void DMX512_Uart_ProcessPacket(uint16_t received)
 {
-    recievedData = received; // DEBUGGING
-    if (received < 513) {
-        smallFrameCnt++;
-    }
+    /* Minimum valid packet: START code + at least one channel byte */
+    if (received < 2) return;
 
-    if (received < 2 || dma_rx_buf[0] != 0x00) return;
     /* Non-NULL START codes silently ignored per DMX512-A §8.5.4 */
+    if (dma_rx_buf[0] != DMX512_START_CODE_VALUE) return;
 
-    uint16_t data_len = received - 1;
+#ifdef DEBUG
+    receivedData = received;
+    if (received < DMX512_PACKET_MAX_SIZE) smallFrameCnt++;
+#endif
+
+    uint16_t data_len = received - DMX512_DATA_OFFSET;
     if (data_len > DMX_UNIVERSE_MAX_LENGTH) {
         data_len = DMX_UNIVERSE_MAX_LENGTH;
     }
 
     /* Only received channels written; Latch() preserves the tail */
-    uint8_t idx = write_idx;
-    memcpy(pending_buf[idx], &dma_rx_buf[1], data_len);
-    pending_data_len[idx] = data_len;
+    uint8_t buf_idx = ctx.write_idx;
+    memcpy(pending_buf[buf_idx], &dma_rx_buf[DMX512_DATA_OFFSET], data_len);
+    ctx.pending_data_len[buf_idx] = data_len;
 
-    /* Publish: flip write_idx so Latch reads this buffer */
-    write_idx ^= 1;
+    /* Publish: new data is at buf_idx; flip so Latch() will read it */
+    ctx.write_idx = buf_idx ^ 1;
 
     /* Defer notification — can't call FreeRTOS APIs above BASEPRI */
-    deferred_notify_flag = true;
+    ctx.deferred_notify_flag = true;
     NVIC_SetPendingIRQ(DMA1_Stream1_IRQn);
 }
 
@@ -148,50 +172,54 @@ static void DMX512_Uart_ProcessPacket(uint16_t received)
 /** @brief Initialize UART reception. UART5 must already be configured by CubeMX. */
 static int DMX512_Uart_Init(osThreadId_t task)
 {
-    if (initialized) return 0;
+    if (ctx.initialized) return 0;
 
     extern UART_HandleTypeDef huart5;
-    dmx_huart   = &huart5;
-    notify_task = task;
-    rx_state    = DMX512_STATE_IDLE;
 
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
-    pending_data_len[0] = 0;
-    pending_data_len[1] = 0;
-    write_idx = 0;
-    deferred_notify_flag = false;
+
+    ctx.huart                = &huart5;
+    ctx.notify_task          = task;
+    ctx.rx_state             = DMX512_STATE_IDLE;
+    ctx.write_idx            = 0;
+    ctx.pending_data_len[0]  = 0;
+    ctx.pending_data_len[1]  = 0;
+    ctx.deferred_notify_flag = false;
 
     DMX512_Uart_StartDmaRx();
 
-    initialized = true;
+    ctx.initialized = true; 
     return 0;
 }
 
 /** @brief Tear down reception. Safe to call when not initialized. */
 static void DMX512_Uart_Deinit(void)
 {
-    if (!initialized) return;
+    if (!ctx.initialized) return;
 
-    initialized = false;
+    ctx.initialized = false; /* Prevent ISR from running while we tear down */
 
     /* Disable custom interrupt sources before stopping DMA */
-    CLEAR_BIT(dmx_huart->Instance->CR1, USART_CR1_IDLEIE);
-    CLEAR_BIT(dmx_huart->Instance->CR3, USART_CR3_EIE);
-    HAL_UART_AbortReceive(dmx_huart);
+    CLEAR_BIT(ctx.huart->Instance->CR1, USART_CR1_IDLEIE);
+    CLEAR_BIT(ctx.huart->Instance->CR3, USART_CR3_EIE);
+    HAL_UART_AbortReceive(ctx.huart);
 
     /* Zero buffers so lights go dark on protocol switch */
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
 
-    deferred_notify_flag = false;
     NVIC_ClearPendingIRQ(DMA1_Stream1_IRQn);
 
-    notify_task = NULL;
-    dmx_huart   = NULL;
-    rx_state    = DMX512_STATE_IDLE;
+    ctx.huart                = NULL;
+    ctx.notify_task          = NULL;
+    ctx.rx_state             = DMX512_STATE_IDLE;
+    ctx.write_idx            = 0;
+    ctx.pending_data_len[0]  = 0;
+    ctx.pending_data_len[1]  = 0;
+    ctx.deferred_notify_flag = false;
 }
 
 /**
@@ -203,12 +231,12 @@ static void DMX512_Uart_Deinit(void)
  */
 static void DMX512_Uart_Latch(void)
 {
-    uint8_t  read_idx = write_idx ^ 1;
-    uint16_t len      = pending_data_len[read_idx];
+    uint8_t  read_idx = ctx.write_idx ^ 1;
+    uint16_t len      = ctx.pending_data_len[read_idx];
 
     if (len > 0) {
         memcpy(active_buf, pending_buf[read_idx], len);
-        /* active_buf[len..511] retains values from the previous Latch */
+        /* active_buf[len..DMX_UNIVERSE_MAX_LENGTH-1] retains values from the previous Latch */
     }
 }
 
@@ -237,7 +265,7 @@ static bool DMX512_Uart_HandleErrors(UART_HandleTypeDef *huart, uint32_t isr)
     if (isr & USART_ISR_ORE) {
         /* Byte lost → packet data shifted, discard and resync */
         DMX512_Uart_StartDmaRx();
-        rx_state = DMX512_STATE_IDLE;
+        ctx.rx_state = DMX512_STATE_IDLE;
         return true;
     }
     /* NE/PE alone: noisy byte, UART continues — fall through */
@@ -258,28 +286,30 @@ static void DMX512_Uart_HandleFramingError(UART_HandleTypeDef *huart)
 
     if (rdr == 0x00) {
         /* Valid Break — flush any in-flight packet, then start fresh */
-        if (rx_state == DMX512_STATE_RECEIVING) {
+        if (ctx.rx_state == DMX512_STATE_RECEIVING) {
             uint16_t received = DMX512_Uart_DmaReceived();
             if (received > 0) {
                 DMX512_Uart_ProcessPacket(received);
             }
         }
         DMX512_Uart_StartDmaRx();
-        rx_state = DMX512_STATE_RECEIVING;
+        ctx.rx_state = DMX512_STATE_RECEIVING;
         return;
     }
 
     /* Non-zero FE: mid-packet corruption or line noise */
-    midPcktErrCnt++; // DEBUGGING
+#ifdef DEBUG
+    midPcktErrCnt++;
+#endif
 
-    if (rx_state == DMX512_STATE_RECEIVING) {
+    if (ctx.rx_state == DMX512_STATE_RECEIVING) {
         /* Salvage clean bytes before the corrupted slot (§9.1) */
         uint16_t received = DMX512_Uart_DmaReceived();
         if (received >= 2) {
             DMX512_Uart_ProcessPacket(received);
         }
         DMX512_Uart_StartDmaRx();
-        rx_state = DMX512_STATE_IDLE;
+        ctx.rx_state = DMX512_STATE_IDLE;
     }
 }
 
@@ -293,13 +323,13 @@ static void DMX512_Uart_HandleIdle(UART_HandleTypeDef *huart)
 {
     SET_BIT(huart->Instance->ICR, USART_ICR_IDLECF);
 
-    if (rx_state != DMX512_STATE_RECEIVING) return;
+    if (ctx.rx_state != DMX512_STATE_RECEIVING) return;
 
     uint16_t received = DMX512_Uart_DmaReceived();
     if (received == 0) return;  /* MAB, not end-of-packet */
 
     DMX512_Uart_ProcessPacket(received);
-    rx_state = DMX512_STATE_IDLE;
+    ctx.rx_state = DMX512_STATE_IDLE;
 }
 
 /* ========================== ISR Handler ========================== */
@@ -312,7 +342,7 @@ static void DMX512_Uart_HandleIdle(UART_HandleTypeDef *huart)
  */
 void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
 {
-    if (!initialized || huart->Instance != UART5) return;
+    if (!ctx.initialized || huart->Instance != UART5) return;
 
     uint32_t isr = READ_REG(huart->Instance->ISR);
 
@@ -338,11 +368,11 @@ void DMX512_Uart_IRQHandler(UART_HandleTypeDef *huart)
  */
 bool DMX512_Uart_DeferredNotify(void)
 {
-    if (!deferred_notify_flag) return false;
-    deferred_notify_flag = false;
+    if (!ctx.deferred_notify_flag) return false;
+    ctx.deferred_notify_flag = false;
 
-    if (notify_task != NULL) {
-        osThreadFlagsSet(notify_task, DMX512_THREAD_FLAG_FRAME_READY);
+    if (ctx.notify_task != NULL) {
+        osThreadFlagsSet(ctx.notify_task, DMX512_THREAD_FLAG_FRAME_READY);
     }
     return true;
 }
