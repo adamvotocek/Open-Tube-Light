@@ -25,9 +25,6 @@ extern "C" {
 
 /* ========================== Constants ========================== */
 
-/** @brief Full DMX512 packet: 1 START code byte + 512 data slots */
-#define DMX512_PACKET_MAX_SIZE  513U
-
 /** @brief Failsafe timeout per ANSI E1.11 (1.25 seconds without a packet) */
 #define DMX512_FAILSAFE_TIMEOUT_MS  1250U
 
