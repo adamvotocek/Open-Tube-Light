@@ -997,7 +997,7 @@
       "plot": "fabricationFiles/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "documentation/ledTubeFixture3Dmodel.step",
+      "step": "../../../../../../Downloads/ledTubeFixture3DmodelNoMark.step",
       "svg": "",
       "vrml": ""
     },
