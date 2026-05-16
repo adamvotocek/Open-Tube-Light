@@ -2252,7 +2252,7 @@
 	)
 	(wire
 		(pts
-			(xy 68.58 105.41) (xy 92.71 105.41)
+			(xy 82.55 105.41) (xy 92.71 105.41)
 		)
 		(stroke
 			(width 0)
@@ -2272,7 +2272,7 @@
 	)
 	(wire
 		(pts
-			(xy 68.58 99.06) (xy 102.87 99.06)
+			(xy 82.55 99.06) (xy 102.87 99.06)
 		)
 		(stroke
 			(width 0)
@@ -2612,7 +2612,7 @@
 	)
 	(wire
 		(pts
-			(xy 68.58 101.6) (xy 102.87 101.6)
+			(xy 82.55 101.6) (xy 102.87 101.6)
 		)
 		(stroke
 			(width 0)
@@ -2992,7 +2992,7 @@
 	)
 	(hierarchical_label "UART_DI"
 		(shape input)
-		(at 68.58 101.6 180)
+		(at 82.55 101.6 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3003,7 +3003,7 @@
 	)
 	(hierarchical_label "UART_RO"
 		(shape output)
-		(at 68.58 99.06 180)
+		(at 82.55 99.06 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3014,7 +3014,7 @@
 	)
 	(hierarchical_label "DE_nRE"
 		(shape output)
-		(at 68.58 105.41 180)
+		(at 82.55 105.41 180)
 		(effects
 			(font
 				(size 1.27 1.27)
