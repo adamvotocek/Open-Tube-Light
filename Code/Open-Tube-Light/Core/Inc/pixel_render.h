@@ -2,7 +2,7 @@
  * @file pixel_render.h
  * @brief Pixel Rendering Module
  *
- * Converts DMX channel data into SK9822 pixel frames. Handles DMX-to-pixel
+ * Converts DMX channel data into SK9822 pixel frames. Handles DMX-to-segment
  * mapping (start address, multi-universe spanning), failsafe behavior,
  * and periodic idle refresh.
  *
@@ -28,8 +28,8 @@ void Pixel_Render_Init(SK9822_Handle_t *h);
 /**
  * @brief Build and transmit a new frame from current DMX data
  *
- * Reads device config (pixel format, start address, universe count),
- * maps DMX channels to SK9822 pixels, and kicks DMA.
+ * Reads device config (segment format, start address, universe count),
+ * maps DMX segment data to SK9822 pixels, and kicks DMA.
  */
 void Pixel_Render_Frame(void);
 

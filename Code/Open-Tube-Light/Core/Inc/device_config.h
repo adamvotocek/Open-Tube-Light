@@ -9,7 +9,7 @@
  * The configuration is organized into logical groups:
  * - Device identity (names)
  * - Network settings (IP, DHCP)
- * - Pixel/LED configuration
+ * - Physical pixel and segment layout
  * - DMX/Art-Net protocol settings
  * - Failsafe behavior
  * 
@@ -64,13 +64,13 @@ typedef enum {
 } DeviceConfig_IpMode_t;
 
 /**
- * @brief Pixel color format/channel configuration
+ * @brief Segment color format/channel configuration
  */
 typedef enum {
-    PIXEL_FORMAT_RGB      = 0,  ///< 3 channels: Red, Green, Blue
-    PIXEL_FORMAT_RGBW     = 1,  ///< 4 channels: Red, Green, Blue, White
-    PIXEL_FORMAT_RGB16    = 2,  ///< 6 channels: 16-bit RGB (high/low bytes)
-} DeviceConfig_PixelFormat_t;
+    SEGMENT_FORMAT_RGB      = 0,  ///< 3 channels: Red, Green, Blue
+    SEGMENT_FORMAT_RGBW     = 1,  ///< 4 channels: Red, Green, Blue, White
+    SEGMENT_FORMAT_RGB16    = 2,  ///< 6 channels: 16-bit RGB (high/low bytes)
+} DeviceConfig_SegmentFormat_t;
 
 /**
  * @brief DMX input source selection
@@ -113,12 +113,13 @@ typedef struct {
 } DeviceConfig_Network_t;
 
 /**
- * @brief Pixel/LED strip configuration
+ * @brief Physical pixel and logical segment layout configuration
  */
 typedef struct {
-    uint16_t pixel_count;                           ///< Number of pixels in the strip
-    DeviceConfig_PixelFormat_t pixel_format;        ///< Pixel color format
-} DeviceConfig_Pixel_t;
+    uint16_t pixel_count;                           ///< Number of physical pixels in the strip
+    uint16_t segment_count;                         ///< Number of independently addressable pixel groups
+    DeviceConfig_SegmentFormat_t segment_format;    ///< DMX data format for each logical segment
+} DeviceConfig_Layout_t;
 
 /**
  * @brief DMX/Art-Net protocol configuration
@@ -148,7 +149,7 @@ typedef enum {
     DEVICE_CONFIG_CHANGE_NONE              = 0,
     DEVICE_CONFIG_CHANGE_IDENTITY          = (1U << 0),
     DEVICE_CONFIG_CHANGE_NETWORK           = (1U << 1),
-    DEVICE_CONFIG_CHANGE_PIXEL             = (1U << 2),
+    DEVICE_CONFIG_CHANGE_LAYOUT            = (1U << 2),
     DEVICE_CONFIG_CHANGE_DMX_SOURCE        = (1U << 3),
     DEVICE_CONFIG_CHANGE_DMX_START_ADDRESS = (1U << 4),
     DEVICE_CONFIG_CHANGE_ARTNET_ADDRESS    = (1U << 5),
@@ -177,8 +178,8 @@ typedef struct {
     bool network_valid;
     DeviceConfig_Network_t network;
 
-    bool pixel_valid;
-    DeviceConfig_Pixel_t pixel;
+    bool layout_valid;
+    DeviceConfig_Layout_t layout;
 
     bool input_source_valid;
     DeviceConfig_DmxInput_t input_source;
@@ -216,7 +217,7 @@ typedef struct {
     
     DeviceConfig_Identity_t identity;       ///< Device names
     DeviceConfig_Network_t network;         ///< Network settings
-    DeviceConfig_Pixel_t pixel;             ///< Pixel configuration
+    DeviceConfig_Layout_t layout;           ///< Physical pixel and segment layout
     DeviceConfig_Dmx_t dmx;                 ///< DMX/Art-Net settings
     DeviceConfig_Output_t output;           ///< Output behavior
     
@@ -272,23 +273,23 @@ int DeviceConfig_GetSnapshot(DeviceConfig_t *config_out);
 /**
  * @brief Get calculated number of DMX channels needed
  * 
- * Calculates total DMX channels based on pixel count and format:
- * - RGB: 3 channels per pixel
- * - RGBW: 4 channels per pixel
- * - RGB16: 6 channels per pixel
+ * Calculates total DMX channels based on segment count and segment format:
+ * - RGB: 3 channels per segment
+ * - RGBW: 4 channels per segment
+ * - RGB16: 6 channels per segment
  * 
  * @return Number of DMX channels
  */
 uint16_t DeviceConfig_GetChannelCount(void);
 
 /**
- * @brief Get number of DMX channels consumed per pixel
+ * @brief Get number of DMX channels consumed per segment
  * 
- * Determined by pixel_format: RGB=3, RGBW=4, RGB16=6.
+ * Determined by segment_format: RGB=3, RGBW=4, RGB16=6.
  * 
- * @return Channels per pixel (3, 4, or 6)
+ * @return Channels per segment (3, 4, or 6)
  */
-uint8_t DeviceConfig_GetChannelsPerPixel(void);
+uint8_t DeviceConfig_GetChannelsPerSegment(void);
 
 /**
  * @brief Get calculated number of Art-Net universes needed
@@ -339,12 +340,12 @@ int DeviceConfig_SetIdentity(const char *short_name, const char *long_name);
 int DeviceConfig_SetNetwork(const DeviceConfig_Network_t *network);
 
 /**
- * @brief Update pixel configuration
+ * @brief Update strip layout configuration
  * 
- * @param pixel New pixel configuration
+ * @param layout New physical pixel and segment layout
  * @return 0 on success, -1 on failure
  */
-int DeviceConfig_SetPixel(const DeviceConfig_Pixel_t *pixel);
+int DeviceConfig_SetLayout(const DeviceConfig_Layout_t *layout);
 
 /**
  * @brief Update DMX/Art-Net configuration

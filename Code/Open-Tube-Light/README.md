@@ -18,14 +18,15 @@ IP configuration
 - DHCP/static
 - if static: IP address, mask
 
-Pixel configuration
-- number of pixels
-- pixel control (so far we only have RGB, but later there will be options for RGBD, or 16-bit RGB, etc.)
+Strip layout configuration
+- number of physical pixels
+- segment count
+- segment format (so far we only have RGB, but later there will be options for RGBD, or 16-bit RGB, etc.)
 
 DMX protocol
 - input via either DMX or Art-Net
 - start address (and also start universe for Art-Net)
-- note: the channel count of the device is calculated by the pixel configuration 
+- note: the channel count of the device is calculated by the strip layout configuration 
 - note: the number of universes that Art-Net must recieve is determined by the channel count and the start address
 
 Failsafe behavior
