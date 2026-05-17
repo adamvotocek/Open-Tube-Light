@@ -14,3 +14,5 @@ Code/Open-Tube-Light/Core/Src/DMX512/dmx512-A.md
 Code/Open-Tube-Light/Core/Src/Art-Net/ProtocolFailsafes.md
 Code/Open-Tube-Light/Core/Src/DMX_INPUT_DRIVER_GUIDE.md
 Code/Open-Tube-Light/Core/Src/ARTADDRESS_RUNTIME_PLAN.md
+Code/Open-Tube-Light/Core/Src/Art-Net/CustomArtnetBehavior.md
+Code/Open-Tube-Light/Core/Src/Art-Net/CUSTOM_ARTNET_PROTOCOL_IMPLEMENTATION_PLAN.md

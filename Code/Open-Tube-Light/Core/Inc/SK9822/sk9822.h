@@ -18,7 +18,7 @@ extern "C" {
 
 /* ========================== Configuration ========================== */
 
-#define SK9822_STRIP_LED_COUNT  288
+#define SK9822_STRIP_LED_COUNT  144
 
 /* ========================== Frame Sizing ========================== */
 

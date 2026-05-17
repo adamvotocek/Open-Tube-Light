@@ -60,12 +60,12 @@ static const DeviceConfig_t factory_defaults = {
     },
     
     .pixel = {
-        .pixel_count = 288,
+        .pixel_count = 144,
         .pixel_format = PIXEL_FORMAT_RGB,
     },
     
     .dmx = {
-        .input_source = DMX_INPUT_DMX512,
+        .input_source = DMX_INPUT_ARTNET,
         .dmx_start_address = 1,
         .artnet_net = 0,
         .artnet_subnet = 0,
