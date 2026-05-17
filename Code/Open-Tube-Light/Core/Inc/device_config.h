@@ -39,7 +39,7 @@ extern "C" {
 #define DEVICE_CONFIG_LONG_NAME_LEN     64
 
 /** @brief Maximum number of pixels supported by the device */
-#define DEVICE_CONFIG_MAX_PIXELS        144
+#define DEVICE_CONFIG_MAX_PIXELS        288
 
 /** @brief Maximum DMX data length per universe (512 bytes per DMX512-A spec) */
 #define DMX_UNIVERSE_MAX_LENGTH         512
@@ -140,6 +140,69 @@ typedef struct {
 } DeviceConfig_Output_t;
 
 /**
+ * @brief Change mask reported after a runtime config commit
+ *
+ * Lets callers react only to the parts of the configuration that changed.
+ */
+typedef enum {
+    DEVICE_CONFIG_CHANGE_NONE              = 0,
+    DEVICE_CONFIG_CHANGE_IDENTITY          = (1U << 0),
+    DEVICE_CONFIG_CHANGE_NETWORK           = (1U << 1),
+    DEVICE_CONFIG_CHANGE_PIXEL             = (1U << 2),
+    DEVICE_CONFIG_CHANGE_DMX_SOURCE        = (1U << 3),
+    DEVICE_CONFIG_CHANGE_DMX_START_ADDRESS = (1U << 4),
+    DEVICE_CONFIG_CHANGE_ARTNET_ADDRESS    = (1U << 5),
+    DEVICE_CONFIG_CHANGE_DMX_REFRESH_RATE  = (1U << 6),
+    DEVICE_CONFIG_CHANGE_OUTPUT_FAILSAFE   = (1U << 7),
+    DEVICE_CONFIG_CHANGE_DMX               = DEVICE_CONFIG_CHANGE_DMX_SOURCE |
+                                             DEVICE_CONFIG_CHANGE_DMX_START_ADDRESS |
+                                             DEVICE_CONFIG_CHANGE_ARTNET_ADDRESS |
+                                             DEVICE_CONFIG_CHANGE_DMX_REFRESH_RATE,
+    DEVICE_CONFIG_CHANGE_OUTPUT            = DEVICE_CONFIG_CHANGE_OUTPUT_FAILSAFE,
+} DeviceConfig_ChangeFlags_t;
+
+/**
+ * @brief Partial runtime update for one or more config fields
+ *
+ * Each `*_valid` flag controls whether the corresponding field should be
+ * applied to a candidate configuration before validation and commit.
+ */
+typedef struct {
+    bool short_name_valid;
+    char short_name[DEVICE_CONFIG_SHORT_NAME_LEN];
+
+    bool long_name_valid;
+    char long_name[DEVICE_CONFIG_LONG_NAME_LEN];
+
+    bool network_valid;
+    DeviceConfig_Network_t network;
+
+    bool pixel_valid;
+    DeviceConfig_Pixel_t pixel;
+
+    bool input_source_valid;
+    DeviceConfig_DmxInput_t input_source;
+
+    bool dmx_start_address_valid;
+    uint16_t dmx_start_address;
+
+    bool artnet_net_valid;
+    uint8_t artnet_net;
+
+    bool artnet_subnet_valid;
+    uint8_t artnet_subnet;
+
+    bool artnet_start_universe_valid;
+    uint8_t artnet_start_universe;
+
+    bool artnet_max_refresh_rate_valid;
+    uint8_t artnet_max_refresh_rate;
+
+    bool failsafe_valid;
+    DeviceConfig_Failsafe_t failsafe;
+} DeviceConfig_Patch_t;
+
+/**
  * @brief Complete device configuration
  * 
  * This structure contains all user-configurable settings. It is stored in
@@ -196,6 +259,17 @@ int DeviceConfig_Init(void);
 const DeviceConfig_t* DeviceConfig_Get(void);
 
 /**
+ * @brief Copy current configuration into caller-owned storage
+ *
+ * Use this when building a runtime patch so later validation is based on a
+ * stable snapshot rather than a live internal pointer.
+ *
+ * @param config_out Destination for a full config copy
+ * @return 0 on success, -1 on failure
+ */
+int DeviceConfig_GetSnapshot(DeviceConfig_t *config_out);
+
+/**
  * @brief Get calculated number of DMX channels needed
  * 
  * Calculates total DMX channels based on pixel count and format:
@@ -225,6 +299,22 @@ uint8_t DeviceConfig_GetChannelsPerPixel(void);
  * @return Number of universes (1 to DEVICE_CONFIG_MAX_UNIVERSES)
  */
 uint8_t DeviceConfig_GetUniverseCount(void);
+
+/**
+ * @brief Build the active Art-Net output Port-Address list for a config
+ *
+ * The current runtime model only supports a contiguous output range starting
+ * at `dmx.artnet_start_universe`. This helper validates that model and builds
+ * the resulting 15-bit Port-Address values.
+ *
+ * @param config Configuration to evaluate
+ * @param port_addresses Output array sized for DEVICE_CONFIG_MAX_UNIVERSES
+ * @param port_count Number of valid entries written to port_addresses
+ * @return 0 on success, -1 on failure
+ */
+int DeviceConfig_BuildArtNetOutputAddressList(const DeviceConfig_t *config,
+                                             uint16_t *port_addresses,
+                                             uint8_t *port_count);
 
 /**
  * @brief Update device identity settings
@@ -271,6 +361,30 @@ int DeviceConfig_SetDmx(const DeviceConfig_Dmx_t *dmx);
  * @return 0 on success, -1 on failure
  */
 int DeviceConfig_SetOutput(const DeviceConfig_Output_t *output);
+
+/**
+ * @brief Initialize a patch structure to "no change"
+ *
+ * Zero-initializes all flags and payload fields so callers can set only the
+ * fields they intend to modify.
+ *
+ * @param patch Patch structure to initialize
+ */
+void DeviceConfig_PatchInit(DeviceConfig_Patch_t *patch);
+
+/**
+ * @brief Apply a partial runtime update atomically
+ *
+ * Applies the patch to a candidate configuration, validates the full result,
+ * then commits once so multi-field updates do not expose intermediate states.
+ *
+ * @param patch Partial update to apply
+ * @param persist true to request flash persistence, false for runtime-only
+ * @param change_mask Optional output mask of fields changed by the commit
+ * @return 0 on success, -1 on failure
+ */
+int DeviceConfig_ApplyPatch(const DeviceConfig_Patch_t *patch, bool persist,
+                            uint32_t *change_mask);
 
 /**
  * @brief Reset configuration to factory defaults

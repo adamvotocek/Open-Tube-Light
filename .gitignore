@@ -6,3 +6,11 @@ Code/Open-Tube-Light/.github/DMX_INPUT_DRIVER_GUIDE.md
 Code/Open-Tube-Light/ProtocolFailsafes.md
 Code/Open-Tube-Light/Core/Src/DMX512/DMX512_AUDIT.md
 Code/Open-Tube-Light/Core/Src/DMX512/troubleshooting.md
+Code/Open-Tube-Light/DEVICE_CONFIG_PLAN.md
+Code/Open-Tube-Light/Art-Net_4.md
+Code/Open-Tube-Light/Core/Src/DEVICE_CONFIG_PLAN.md
+Code/Open-Tube-Light/Core/Src/Art-Net/Art-Net_4.md
+Code/Open-Tube-Light/Core/Src/DMX512/dmx512-A.md
+Code/Open-Tube-Light/Core/Src/Art-Net/ProtocolFailsafes.md
+Code/Open-Tube-Light/Core/Src/DMX_INPUT_DRIVER_GUIDE.md
+Code/Open-Tube-Light/Core/Src/ARTADDRESS_RUNTIME_PLAN.md
