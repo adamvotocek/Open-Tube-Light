@@ -236,7 +236,7 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
              g_artnet_ctx.node_report.detail);
     
     // ===== PORTS =====
-    uint8_t num_ports = (num_universes > 4) ? 4 : num_universes;
+    uint8_t num_ports = num_universes;
     reply->num_ports_hi = 0;  // Reserved
     reply->num_ports_lo = num_ports;
     

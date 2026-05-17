@@ -36,6 +36,7 @@ extern "C" {
 
 /** @brief Supported first-pass NodeReport codes */
 #define ARTNET_NODE_REPORT_RC_POWER_OK    0x0001U
+#define ARTNET_NODE_REPORT_RC_PARSE_FAIL  0x0004U
 #define ARTNET_NODE_REPORT_RC_SH_NAME_OK  0x0006U
 #define ARTNET_NODE_REPORT_RC_LO_NAME_OK  0x0007U
 #define ARTNET_NODE_REPORT_RC_CONFIG_ERR  0x000CU
@@ -138,7 +139,8 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip);
 /**
  * @brief Handle incoming ArtAddress packet
  */
-void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len);
+void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len,
+                            const ip_addr_t *src_ip, u16_t src_port);
 
 /* ========================== Internal Functions - ArtPollReply ========================== */
 
@@ -160,7 +162,7 @@ void ArtNet_NodeReportSet(uint16_t code, const char *detail);
 /* ========================== Internal Functions - Utilities ========================== */
 
 /** @brief Validate Art-Net packet header ("Art-Net\0" signature) */
-bool ArtNet_ValidateHeader(const uint8_t *data, uint16_t len);
+bool ArtNet_ValidateHeader(const uint8_t *data);
 
 /** @brief Get next XorShift pseudo-random number */
 uint32_t ArtNet_PrngNext(void);

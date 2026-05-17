@@ -187,8 +187,13 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     (void)pcb;
     
     // Validate packet exists and has minimum header size
-    if (p == NULL || p->tot_len < sizeof(ArtNet_Header_t)) {
-        if (p) pbuf_free(p);
+    if (p == NULL) {
+        return;
+    }
+
+    if (p->tot_len < sizeof(ArtNet_Header_t)) {
+        ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL, "Header Too Short");
+        pbuf_free(p);
         return;
     }
     
@@ -196,7 +201,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     uint8_t *data = (uint8_t *)p->payload;
     
     // Validate Art-Net header signature
-    if (!ArtNet_ValidateHeader(data, p->tot_len)) {
+    if (!ArtNet_ValidateHeader(data)) {
         pbuf_free(p);
         return;
     }
@@ -209,6 +214,9 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
         case ARTNET_OP_DMX:
             if (p->tot_len >= 18) {
                 ArtNet_HandleArtDmx((const ArtNet_ArtDmx_t *)data, p->tot_len, addr);
+            } else {
+                ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                     "ArtDmx Too Short");
             }
             break;
 
@@ -218,21 +226,32 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             break;
             
         case ARTNET_OP_SYNC:
-            ArtNet_HandleArtSync(addr);
+            if (p->tot_len >= sizeof(ArtNet_ArtSync_t)) {
+                ArtNet_HandleArtSync(addr);
+            } else {
+                ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                     "ArtSync Too Short");
+            }
             break;
 
         case ARTNET_OP_POLL:
             if (p->tot_len >= 14) {
                 ArtNet_HandleArtPoll((const ArtNet_ArtPoll_t *)data, p->tot_len,
                                     addr, port);
+            } else {
+                ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                     "ArtPoll Too Short");
             }
             break;
             
         case ARTNET_OP_ADDRESS:
-            ArtNet_HandleArtAddress((const ArtNet_ArtAddress_t *)data, p->tot_len);
+            ArtNet_HandleArtAddress((const ArtNet_ArtAddress_t *)data, p->tot_len,
+                                    addr, port);
             break;
             
         default:
+            ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                 "Unsupported OpCode");
             break;
     }
     
@@ -246,6 +265,8 @@ static const char *ArtNet_NodeReportDefaultDetail(uint16_t code)
     switch (code) {
         case ARTNET_NODE_REPORT_RC_POWER_OK:
             return "Power On OK";
+        case ARTNET_NODE_REPORT_RC_PARSE_FAIL:
+            return "Parse Failure";
         case ARTNET_NODE_REPORT_RC_SH_NAME_OK:
             return "Short Name OK";
         case ARTNET_NODE_REPORT_RC_LO_NAME_OK:
@@ -271,9 +292,12 @@ void ArtNet_NodeReportSet(uint16_t code, const char *detail)
             sizeof(g_artnet_ctx.node_report.detail) - 1U);
 }
 
-bool ArtNet_ValidateHeader(const uint8_t *data, uint16_t len)
+bool ArtNet_ValidateHeader(const uint8_t *data)
 {
-    if (len < 10) return false;
+    if (data == NULL) {
+        return false;
+    }
+
     return (memcmp(data, ARTNET_ID, 8) == 0);
 }
 

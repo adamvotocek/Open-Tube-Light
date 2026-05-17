@@ -14,11 +14,12 @@
 
 #include "Art-Net/artnet_internal.h"
 #include "cmsis_os.h"
+#include <stddef.h>
 #include <string.h>
 
 /* ========================== Private Constants ========================== */
 
-#define ARTNET_COMMAND_PACKET_HEADER_SIZE  16U
+#define ARTNET_COMMAND_PACKET_HEADER_SIZE  ((uint16_t)offsetof(ArtNet_ArtCommand_t, data))
 
 #define ARTNET_COMMAND_SEEN_DMX_ADDRESS    (1U << 0)
 #define ARTNET_COMMAND_SEEN_SEGMENT_COUNT  (1U << 1)
@@ -26,8 +27,15 @@
 
 /* ========================== Private Functions ========================== */
 
-static void ArtNet_ReplyCommandStatus(const ip_addr_t *src_ip, u16_t src_port,
-                                      uint16_t code, const char *detail);
+static void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
+                                        uint16_t code, const char *detail);
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip);
+static const char *ArtNet_GetCommandSuccessDetail(bool dmx_address_changed,
+                                                  bool segment_count_changed,
+                                                  bool mode_changed);
+static const char *ArtNet_GetCommandApplyErrorDetail(bool dmx_address_changed,
+                                                     bool segment_count_changed,
+                                                     bool mode_changed);
 static bool ArtNet_IsWhitespace(char ch);
 static bool ArtNet_GetNullTerminatedLength(const uint8_t *text, uint16_t max_len,
                                            uint16_t *text_len_out);
@@ -40,6 +48,7 @@ static bool ArtNet_ParseUint16Span(const char *text, size_t start, size_t end,
 static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
                                       const DeviceConfig_t *current_config,
                                       DeviceConfig_Patch_t *patch,
+                                      uint16_t *error_code_out,
                                       const char **error_detail_out);
 
 /* ========================== ArtDmx Handler ========================== */
@@ -86,6 +95,8 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     
     // Verify packet contains advertised data
     if (len < (18 + dmx_len)) {
+        ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                             "ArtDmx Truncated");
         return;
     }
     
@@ -178,30 +189,34 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
     // targeted range [TargetPortAddressBottom, TargetPortAddressTop].
     if (pkt->flags & (1 << 5)) {
         // Target PA fields need at least 18 bytes
-        if (len >= 18) {
-            const DeviceConfig_t *config = DeviceConfig_Get();
-            uint8_t num_universes = DeviceConfig_GetUniverseCount();
-            
-            uint16_t target_top = ((uint16_t)pkt->target_pa_top_hi << 8)
-                                | pkt->target_pa_top_lo;
-            uint16_t target_bot = ((uint16_t)pkt->target_pa_bot_hi << 8)
-                                | pkt->target_pa_bot_lo;
-            
-            bool in_range = false;
-            for (int i = 0; i < num_universes; i++) {
-                uint16_t pa = ARTNET_BUILD_PORT_ADDRESS(
-                    config->dmx.artnet_net,
-                    config->dmx.artnet_subnet,
-                    config->dmx.artnet_start_universe + i);
-                if (pa >= target_bot && pa <= target_top) {
-                    in_range = true;
-                    break;
-                }
+        if (len < 18) {
+            ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                 "ArtPoll Target Short");
+            return;
+        }
+
+        const DeviceConfig_t *config = DeviceConfig_Get();
+        uint8_t num_universes = DeviceConfig_GetUniverseCount();
+        
+        uint16_t target_top = ((uint16_t)pkt->target_pa_top_hi << 8)
+                            | pkt->target_pa_top_lo;
+        uint16_t target_bot = ((uint16_t)pkt->target_pa_bot_hi << 8)
+                            | pkt->target_pa_bot_lo;
+        
+        bool in_range = false;
+        for (int i = 0; i < num_universes; i++) {
+            uint16_t pa = ARTNET_BUILD_PORT_ADDRESS(
+                config->dmx.artnet_net,
+                config->dmx.artnet_subnet,
+                config->dmx.artnet_start_universe + i);
+            if (pa >= target_bot && pa <= target_top) {
+                in_range = true;
+                break;
             }
-            
-            if (!in_range) {
-                return;  // None of our Port-Addresses match targeted range
-            }
+        }
+        
+        if (!in_range) {
+            return;  // None of our Port-Addresses match targeted range
         }
     }
     
@@ -259,66 +274,73 @@ void ArtNet_HandleArtCommand(const ArtNet_ArtCommand_t *pkt, uint16_t len,
 {
     const DeviceConfig_t *config = DeviceConfig_Get();
     DeviceConfig_Patch_t patch;
-    uint32_t change_mask = DEVICE_CONFIG_CHANGE_NONE;
+    uint16_t error_code = ARTNET_NODE_REPORT_RC_PARSE_FAIL;
     const char *error_detail = NULL;
+    const char *success_detail = NULL;
     uint16_t text_len = 0U;
-
-    if (config->dmx.input_source != DMX_INPUT_ARTNET) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Art-Net Inactive");
-        return;
-    }
+    bool dmx_address_changed = false;
+    bool segment_count_changed = false;
+    bool mode_changed = false;
 
     if (len < ARTNET_COMMAND_PACKET_HEADER_SIZE) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Parse Error");
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                    "ArtCommand Too Short");
         return;
     }
 
     text_len = ((uint16_t)pkt->length_hi << 8) | pkt->length_lo;
     if (text_len == 0U || text_len > ARTNET_COMMAND_TEXT_MAX_LENGTH) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Parse Error");
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                    "ArtCommand Bad Length");
         return;
     }
 
     if (len < (ARTNET_COMMAND_PACKET_HEADER_SIZE + text_len)) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Parse Error");
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                    "ArtCommand Truncated");
         return;
     }
 
     if (!ArtNet_GetNullTerminatedLength(pkt->data, text_len, &text_len)) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Parse Error");
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                    "ArtCommand Missing NUL");
         return;
     }
 
     DeviceConfig_PatchInit(&patch);
+
     if (ArtNet_ParseCommandPayload((const char *)pkt->data, text_len, config,
-                                   &patch, &error_detail) != 0) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  error_detail);
+                                   &patch, &error_code, &error_detail) != 0) {
+        ArtNet_ReplyImmediateStatus(src_ip, src_port, error_code, error_detail);
         return;
     }
 
-    if (DeviceConfig_ApplyPatch(&patch, false, &change_mask) != 0) {
-        ArtNet_ReplyCommandStatus(src_ip, src_port,
-                                  ARTNET_NODE_REPORT_RC_CONFIG_ERR,
-                                  "Config Invalid");
+    dmx_address_changed = patch.dmx_start_address_valid &&
+                          (patch.dmx_start_address != config->dmx.dmx_start_address);
+    segment_count_changed = patch.layout_valid &&
+                            (patch.layout.segment_count != config->layout.segment_count);
+    mode_changed = patch.layout_valid &&
+                   (patch.layout.segment_format != config->layout.segment_format);
+
+    if (DeviceConfig_ApplyPatch(&patch, false, NULL) != 0) {
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_CONFIG_ERR,
+                                    ArtNet_GetCommandApplyErrorDetail(dmx_address_changed,
+                                                                      segment_count_changed,
+                                                                      mode_changed));
         return;
     }
 
-    (void)change_mask;
-    ArtNet_ReplyCommandStatus(src_ip, src_port,
-                              ARTNET_NODE_REPORT_RC_POWER_OK,
-                              "Command OK");
+    success_detail = ArtNet_GetCommandSuccessDetail(dmx_address_changed,
+                                                    segment_count_changed,
+                                                    mode_changed);
+    ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                ARTNET_NODE_REPORT_RC_POWER_OK,
+                                success_detail);
 }
 
 /* ========================== ArtSync Handler ========================== */
@@ -378,19 +400,113 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip)
  * - Apply changes via DeviceConfig_Set*() functions
  * - Send ArtPollReply to confirm changes
  */
-void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len)
+void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len,
+                            const ip_addr_t *src_ip, u16_t src_port)
 {
     (void)pkt;
-    (void)len;
+
+    if (len < sizeof(ArtNet_ArtAddress_t)) {
+        ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                    ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                    "ArtAddress Too Short");
+        return;
+    }
+
+    ArtNet_ReplyImmediateStatus(src_ip, src_port,
+                                ARTNET_NODE_REPORT_RC_CONFIG_ERR,
+                                "ArtAddress Unsupported");
 }
 
 /* ========================== Private Functions ========================== */
 
-static void ArtNet_ReplyCommandStatus(const ip_addr_t *src_ip, u16_t src_port,
-                                      uint16_t code, const char *detail)
+static void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
+                                        uint16_t code, const char *detail)
 {
+    // If a delayed ArtPollReply for the same controller is already queued,
+    // collapse it into this immediate status reply so the controller does not
+    // receive two near-identical PollReply packets for one interaction.
+    ArtNet_RemoveQueuedPollReply(src_ip);
     ArtNet_NodeReportSet(code, detail);
     ArtNet_SendPollReply(src_ip, src_port);
+}
+
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip)
+{
+    ArtNet_PollReplyQueue_t *queue = &g_artnet_ctx.reply_queue;
+
+    if (src_ip == NULL) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < queue->count; i++) {
+        if (ip_addr_cmp(src_ip, &queue->entries[i].addr)) {
+            for (uint8_t j = i + 1U; j < queue->count; j++) {
+                queue->entries[j - 1U] = queue->entries[j];
+            }
+
+            queue->count--;
+            if (queue->count == 0U && g_artnet_ctx.poll_reply_timer != NULL) {
+                osTimerStop(g_artnet_ctx.poll_reply_timer);
+            }
+            return;
+        }
+    }
+}
+
+static const char *ArtNet_GetCommandSuccessDetail(bool dmx_address_changed,
+                                                  bool segment_count_changed,
+                                                  bool mode_changed)
+{
+    uint8_t change_count = 0U;
+
+    if (dmx_address_changed) {
+        change_count++;
+    }
+
+    if (segment_count_changed) {
+        change_count++;
+    }
+
+    if (mode_changed) {
+        change_count++;
+    }
+
+    if (change_count == 0U) {
+        return "No Change Applied";
+    }
+
+    if (change_count > 1U) {
+        return "Multiple Fields Updated";
+    }
+
+    if (dmx_address_changed) {
+        return "DMX Address Updated";
+    }
+
+    if (segment_count_changed) {
+        return "Segment Count Updated";
+    }
+
+    return "Mode Updated";
+}
+
+static const char *ArtNet_GetCommandApplyErrorDetail(bool dmx_address_changed,
+                                                     bool segment_count_changed,
+                                                     bool mode_changed)
+{
+    if (dmx_address_changed && (segment_count_changed || mode_changed)) {
+        return "Address/Layout Invalid";
+    }
+
+    if (dmx_address_changed) {
+        return "DMX Address Invalid";
+    }
+
+    if (segment_count_changed || mode_changed) {
+        return "Layout Invalid";
+    }
+
+    return "Command Rejected";
 }
 
 static bool ArtNet_IsWhitespace(char ch)
@@ -496,6 +612,7 @@ static bool ArtNet_ParseUint16Span(const char *text, size_t start, size_t end,
 static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
                                       const DeviceConfig_t *current_config,
                                       DeviceConfig_Patch_t *patch,
+                                      uint16_t *error_code_out,
                                       const char **error_detail_out)
 {
     DeviceConfig_Layout_t layout_candidate;
@@ -505,11 +622,12 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
     size_t cursor = 0U;
 
     if (text == NULL || current_config == NULL || patch == NULL ||
-        error_detail_out == NULL) {
+        error_code_out == NULL || error_detail_out == NULL) {
         return -1;
     }
 
-    *error_detail_out = "Parse Error";
+    *error_code_out = ARTNET_NODE_REPORT_RC_PARSE_FAIL;
+    *error_detail_out = "ArtCommand Parse";
     layout_candidate = current_config->layout;
 
     while (cursor < text_len) {
@@ -533,12 +651,14 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
         }
 
         if (cursor >= text_len || text[cursor] != '=') {
+            *error_detail_out = "Missing =";
             return -1;
         }
 
         command_end = cursor;
         ArtNet_TrimSpan(text, &command_start, &command_end);
         if (command_start == command_end) {
+            *error_detail_out = "Empty Command";
             return -1;
         }
 
@@ -549,25 +669,29 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
         }
 
         if (cursor >= text_len || text[cursor] != '&') {
+            *error_detail_out = "Missing &";
             return -1;
         }
 
         value_end = cursor;
         ArtNet_TrimSpan(text, &value_start, &value_end);
         if (value_start == value_end) {
+            *error_detail_out = "Empty Value";
             return -1;
         }
 
         if (ArtNet_SpanEqualsIgnoreCase(text, command_start, command_end,
                                         "DmxAddress")) {
             if ((seen_mask & ARTNET_COMMAND_SEEN_DMX_ADDRESS) != 0U) {
-                *error_detail_out = "Duplicate Command";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "Duplicate DmxAddress";
                 return -1;
             }
 
             if (!ArtNet_ParseUint16Span(text, value_start, value_end,
                                         1U, 512U, &parsed_value)) {
-                *error_detail_out = "Invalid DmxAddress";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "DmxAddress Invalid";
                 return -1;
             }
 
@@ -577,13 +701,15 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
         } else if (ArtNet_SpanEqualsIgnoreCase(text, command_start, command_end,
                                                "SegmentCount")) {
             if ((seen_mask & ARTNET_COMMAND_SEEN_SEGMENT_COUNT) != 0U) {
-                *error_detail_out = "Duplicate Command";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "Duplicate SegmentCount";
                 return -1;
             }
 
             if (!ArtNet_ParseUint16Span(text, value_start, value_end,
                                         1U, 999U, &parsed_value)) {
-                *error_detail_out = "Invalid SegmentCount";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "SegmentCount Invalid";
                 return -1;
             }
 
@@ -593,12 +719,14 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
         } else if (ArtNet_SpanEqualsIgnoreCase(text, command_start, command_end,
                                                "Mode")) {
             if ((seen_mask & ARTNET_COMMAND_SEEN_MODE) != 0U) {
-                *error_detail_out = "Duplicate Command";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "Duplicate Mode";
                 return -1;
             }
 
             if (!ArtNet_SpanEqualsIgnoreCase(text, value_start, value_end, "RGB")) {
-                *error_detail_out = "Unsupported Mode";
+                *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+                *error_detail_out = "Mode Unsupported";
                 return -1;
             }
 
@@ -606,7 +734,8 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
             layout_dirty = true;
             seen_mask |= ARTNET_COMMAND_SEEN_MODE;
         } else {
-            *error_detail_out = "Unsupported Command";
+            *error_code_out = ARTNET_NODE_REPORT_RC_CONFIG_ERR;
+            *error_detail_out = "Command Unsupported";
             return -1;
         }
 
@@ -615,6 +744,7 @@ static int ArtNet_ParseCommandPayload(const char *text, size_t text_len,
     }
 
     if (!parsed_any_command) {
+        *error_detail_out = "No Commands";
         return -1;
     }
 
