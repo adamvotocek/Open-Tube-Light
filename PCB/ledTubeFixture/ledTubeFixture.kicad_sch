@@ -1206,17 +1206,18 @@
 		)
 		(uuid "8970d904-725a-4f7f-8e54-e952086d202b")
 	)
-	(text_box "Known problems:\n-no pulldown resistor on 5v PSU enable\n-dc jack slots - tolerance too high - wiggles from side to side\n-no gnd test points for soldering, add some\n-silkscreen on top of vias is bad\n-no silkscreen indication for temp sensor orientation\n-thick signal traces, use better pcb stackup\n-ethernet design is messy as fuck. follow this: ti.com/lit/an/snla387/snla387.pdf\n-rs485 protection unjustified? compare diodes with integrated ones in ca-is2092A chip and with solutions on the internet\n-use better mounted thermistors? some better temp sensing? cheaper?"
+	(text_box "Known problems:\n-no pulldown resistor on 5v PSU enable\n-dc jack slots - tolerance too high - wiggles from side to side\n-no gnd test points for soldering, add some\n-silkscreen on top of vias is bad\n-no silkscreen indication for temp sensor orientation\n-thick signal traces, use better pcb stackup\n-ethernet design is messy as fuck. follow this: ti.com/lit/an/snla387/snla387.pdf\n-rs485 protection unjustified? compare diodes with integrated ones in ca-is2092A chip and with solutions on the internet\n-use better mounted thermistors? some better temp sensing? cheaper?\n-no LEDs are visible from the outside. there should be at least: one power led (mcu controlled), one act led and the ethernet leds should be visible somehow\n-maybe rgb leds are a good option"
 		(exclude_from_sim no)
-		(at 12.7 48.26 0)
-		(size 39.37 49.53)
+		(at 5.08 49.53 0)
+		(size 46.99 60.96)
 		(margins 0.9525 0.9525 0.9525 0.9525)
 		(stroke
 			(width 0)
 			(type solid)
 		)
 		(fill
-			(type none)
+			(type color)
+			(color 255 255 255 1)
 		)
 		(effects
 			(font
