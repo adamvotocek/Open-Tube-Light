@@ -21,6 +21,7 @@
 #include "lwip/tcpip.h"
 #include "lwip/dhcp.h"
 #include "lwip/netif.h"
+#include <stdio.h>
 #include <string.h>
 
 /* ========================== External References ========================== */
@@ -65,6 +66,19 @@ void ArtNet_PollReplySendCallback(void *arg)
 }
 
 /* ========================== Status Helpers ========================== */
+
+static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segment_format)
+{
+    switch (segment_format) {
+        case SEGMENT_FORMAT_RGBW:
+            return "RGBW";
+        case SEGMENT_FORMAT_RGB16:
+            return "RGB16";
+        case SEGMENT_FORMAT_RGB:
+        default:
+            return "RGB";
+    }
+}
 
 /**
  * @brief Build status1, currently static
@@ -210,10 +224,16 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     reply->esta_man_hi = 0x00;
     
     // ===== NODE REPORT =====
-    // Format: "#xxxx [yyyy] message"
+    // Custom format: "#xxxx [yyyy] @aaa $ppp MODE=[mmm] zzzzz..."
     g_artnet_ctx.poll_reply_counter = (g_artnet_ctx.poll_reply_counter + 1) % 10000;
-    snprintf(reply->node_report, 64, "#0001 [%04u] Power On OK", 
-             g_artnet_ctx.poll_reply_counter);
+    snprintf(reply->node_report, sizeof(reply->node_report),
+             "#%04x [%04u] @%03u $%03u MODE=[%s] %s",
+             g_artnet_ctx.node_report.code,
+             g_artnet_ctx.poll_reply_counter,
+             config->dmx.dmx_start_address,
+             config->layout.segment_count,
+             ArtNet_GetSegmentFormatName(config->layout.segment_format),
+             g_artnet_ctx.node_report.detail);
     
     // ===== PORTS =====
     uint8_t num_ports = (num_universes > 4) ? 4 : num_universes;

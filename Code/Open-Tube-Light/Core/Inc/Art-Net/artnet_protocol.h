@@ -48,6 +48,12 @@ extern "C" {
 #define ARTNET_DMX_MAX_LENGTH       512
 
 /**
+ * @brief Maximum ArtCommand text length including null terminator
+ * @note Art-Net 4 allows up to 512 bytes for the ASCII command payload
+ */
+#define ARTNET_COMMAND_TEXT_MAX_LENGTH  512
+
+/**
  * @brief OpSync timeout per Art-Net specification (4 seconds)
  * @note If no OpSync received within this time, revert to immediate output mode
  */
@@ -87,6 +93,12 @@ extern "C" {
  * @note Sent in response to OpPoll or on network configuration change
  */
 #define ARTNET_OP_POLL_REPLY    0x2100
+
+/**
+ * @brief OpCommand - ASCII property programming commands
+ * @note This implementation only supports the custom proof-of-concept commands
+ */
+#define ARTNET_OP_COMMAND       0x2400
 
 /**
  * @brief OpDmx (OpOutput) - DMX512 data transmission
@@ -157,6 +169,23 @@ typedef struct __attribute__((packed)) {
     uint8_t  oem_hi;           ///< OEM code high byte (optional)
     uint8_t  oem_lo;           ///< OEM code low byte (optional)
 } ArtNet_ArtPoll_t;
+
+/**
+ * @brief ArtCommand packet - ASCII property commands
+ * @note Length includes the null terminator. The payload may contain multiple
+ *       Command=Data& assignments in one packet.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  id[8];                                 ///< "Art-Net\0" signature
+    uint16_t opcode;                                ///< 0x2400 (little-endian)
+    uint8_t  prot_ver_hi;                           ///< Protocol version high byte
+    uint8_t  prot_ver_lo;                           ///< Protocol version low byte
+    uint8_t  esta_man_hi;                           ///< ESTA manufacturer code high byte
+    uint8_t  esta_man_lo;                           ///< ESTA manufacturer code low byte
+    uint8_t  length_hi;                             ///< ASCII payload length high byte
+    uint8_t  length_lo;                             ///< ASCII payload length low byte
+    uint8_t  data[ARTNET_COMMAND_TEXT_MAX_LENGTH];  ///< Null-terminated ASCII payload
+} ArtNet_ArtCommand_t;
 
 /**
  * @brief ArtPollReply packet - node identification and capabilities

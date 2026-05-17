@@ -16,6 +16,11 @@
 
 static SK9822_Handle_t *strip;
 
+// DEBUG
+uint32_t render_count = 0;
+uint32_t failsafe_count = 0;
+uint32_t refresh_count = 0;
+
 /* ========================== Private Helpers ========================== */
 
 /**
@@ -27,6 +32,9 @@ static SK9822_Handle_t *strip;
  */
 static void Pixel_Render_MapDmx(void)
 {
+    
+    
+    
     const DeviceConfig_t *cfg = DeviceConfig_Get();
     uint8_t  channels_per_segment = DeviceConfig_GetChannelsPerSegment();
     uint8_t  num_universes = DeviceConfig_GetUniverseCount();
@@ -87,10 +95,13 @@ void Pixel_Render_Frame(void)
     SK9822_BeginFrame(strip);
     Pixel_Render_MapDmx();
     SK9822_EndFrame(strip);
+    render_count++;
 }
 
 void Pixel_Render_Failsafe(void)
 {
+    failsafe_count++;
+
     const DeviceConfig_t *cfg = DeviceConfig_Get();
 
     switch (cfg->output.failsafe) {
@@ -117,4 +128,5 @@ void Pixel_Render_Failsafe(void)
 void Pixel_Render_Refresh(void)
 {
     SK9822_Refresh(strip);
+    refresh_count++;
 }
