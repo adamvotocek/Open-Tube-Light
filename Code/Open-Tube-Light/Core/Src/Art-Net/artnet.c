@@ -6,7 +6,7 @@
  * UDP receive callback, packet dispatch, and buffer management.
  * 
  * Packet-specific handling is delegated to:
- * - artnet_handlers.c: ArtDmx, ArtPoll, ArtSync, ArtAddress handlers
+ * - artnet_handlers.c: ArtDmx, ArtPoll, ArtCommand, ArtSync, ArtAddress handlers
  * - artnet_pollreply.c: ArtPollReply construction and transmission
  * 
  * @see artnet_internal.h for shared internal types and state
@@ -46,6 +46,7 @@ uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGT
 
 static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                                        const ip_addr_t *addr, u16_t port);
+static const char *ArtNet_NodeReportDefaultDetail(uint16_t code);
 
 /* ========================== Public API Implementation ========================== */
 
@@ -66,6 +67,7 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     // ArtPollReply state
     memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
     g_artnet_ctx.poll_reply_counter = 0;
+    ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_POWER_OK, NULL);
     
     // Seed PRNG with system tick for random delay generation
     g_artnet_ctx.prng_state = osKernelGetTickCount() ^ 0xDEADBEEF;
@@ -146,6 +148,7 @@ void ArtNet_Deinit(void)
     memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
     memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
     memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
+    memset(&g_artnet_ctx.node_report, 0, sizeof(ArtNet_NodeReportState_t));
     
     g_artnet_ctx.processing_task = NULL;
     g_artnet_ctx.initialized = false;
@@ -208,6 +211,11 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
                 ArtNet_HandleArtDmx((const ArtNet_ArtDmx_t *)data, p->tot_len, addr);
             }
             break;
+
+        case ARTNET_OP_COMMAND:
+            ArtNet_HandleArtCommand((const ArtNet_ArtCommand_t *)data, p->tot_len,
+                                    addr, port);
+            break;
             
         case ARTNET_OP_SYNC:
             ArtNet_HandleArtSync(addr);
@@ -232,6 +240,36 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
 }
 
 /* ========================== Utility Functions ========================== */
+
+static const char *ArtNet_NodeReportDefaultDetail(uint16_t code)
+{
+    switch (code) {
+        case ARTNET_NODE_REPORT_RC_POWER_OK:
+            return "Power On OK";
+        case ARTNET_NODE_REPORT_RC_SH_NAME_OK:
+            return "Short Name OK";
+        case ARTNET_NODE_REPORT_RC_LO_NAME_OK:
+            return "Long Name OK";
+        case ARTNET_NODE_REPORT_RC_CONFIG_ERR:
+            return "Config Error";
+        default:
+            return "";
+    }
+}
+
+void ArtNet_NodeReportSet(uint16_t code, const char *detail)
+{
+    const char *text = detail;
+
+    if (text == NULL || text[0] == '\0') {
+        text = ArtNet_NodeReportDefaultDetail(code);
+    }
+
+    g_artnet_ctx.node_report.code = code;
+    memset(g_artnet_ctx.node_report.detail, 0, sizeof(g_artnet_ctx.node_report.detail));
+    strncpy(g_artnet_ctx.node_report.detail, text,
+            sizeof(g_artnet_ctx.node_report.detail) - 1U);
+}
 
 bool ArtNet_ValidateHeader(const uint8_t *data, uint16_t len)
 {

@@ -61,7 +61,7 @@ static const DeviceConfig_t factory_defaults = {
     
     .layout = {
         .pixel_count = 144,
-        .segment_count = 144,
+        .segment_count = 8,
         .segment_format = SEGMENT_FORMAT_RGB,
     },
     

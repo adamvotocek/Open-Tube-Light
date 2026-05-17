@@ -31,6 +31,15 @@ extern "C" {
 /** @brief Max queued ArtPollReply destinations (supports multiple controllers) */
 #define ARTNET_MAX_PENDING_REPLIES  4
 
+/** @brief Maximum length of the free-form detail stored for NodeReport */
+#define ARTNET_NODE_REPORT_DETAIL_MAX  24
+
+/** @brief Supported first-pass NodeReport codes */
+#define ARTNET_NODE_REPORT_RC_POWER_OK    0x0001U
+#define ARTNET_NODE_REPORT_RC_SH_NAME_OK  0x0006U
+#define ARTNET_NODE_REPORT_RC_LO_NAME_OK  0x0007U
+#define ARTNET_NODE_REPORT_RC_CONFIG_ERR  0x000CU
+
 /* ========================== Internal Types ========================== */
 
 /**
@@ -54,6 +63,14 @@ typedef struct {
 } ArtNet_PollReplyQueue_t;
 
 /**
+ * @brief Current NodeReport status presented in ArtPollReply
+ */
+typedef struct {
+    uint16_t code;                                   ///< Table 3 status code
+    char detail[ARTNET_NODE_REPORT_DETAIL_MAX + 1U]; ///< Free-form engineering detail
+} ArtNet_NodeReportState_t;
+
+/**
  * @brief Art-Net module internal context
  * 
  * Contains all internal state for the Art-Net implementation.
@@ -74,6 +91,7 @@ typedef struct {
     osTimerId_t poll_reply_timer;           ///< Timer for delayed reply
     ArtNet_PollReplyQueue_t reply_queue;    ///< Queued reply destinations
     uint16_t poll_reply_counter;            ///< Status report counter
+    ArtNet_NodeReportState_t node_report;   ///< Current report code and text
     
     // PRNG state
     uint32_t prng_state;                    ///< XorShift PRNG state
@@ -107,6 +125,12 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
                          const ip_addr_t *src_ip, u16_t src_port);
 
 /**
+ * @brief Handle incoming ArtCommand packet
+ */
+void ArtNet_HandleArtCommand(const ArtNet_ArtCommand_t *pkt, uint16_t len,
+                            const ip_addr_t *src_ip, u16_t src_port);
+
+/**
  * @brief Handle incoming ArtSync packet
  */
 void ArtNet_HandleArtSync(const ip_addr_t *src_ip);
@@ -129,6 +153,9 @@ void ArtNet_PollReplyTimerCallback(void *arg);
 
 /** @brief Send ArtPollReply from tcpip_thread context (via tcpip_callback) */
 void ArtNet_PollReplySendCallback(void *arg);
+
+/** @brief Update current NodeReport code and detail text */
+void ArtNet_NodeReportSet(uint16_t code, const char *detail);
 
 /* ========================== Internal Functions - Utilities ========================== */
 
