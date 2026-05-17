@@ -59,9 +59,10 @@ static const DeviceConfig_t factory_defaults = {
         .static_gateway = {192, 168, 1, 1},
     },
     
-    .pixel = {
+    .layout = {
         .pixel_count = 144,
-        .pixel_format = PIXEL_FORMAT_RGB,
+        .segment_count = 144,
+        .segment_format = SEGMENT_FORMAT_RGB,
     },
     
     .dmx = {
@@ -99,7 +100,9 @@ static uint8_t callback_count = 0;
 static uint32_t Config_CalculateChecksum(const DeviceConfig_t *config);
 static size_t Config_StringLengthBounded(const char *text, size_t max_len);
 static void Config_CopyString(char *dst, size_t dst_len, const char *src);
-static uint8_t Config_GetChannelsPerPixelFor(const DeviceConfig_t *config);
+static bool Config_IsSupportedSegmentCount(uint16_t pixel_count,
+                                           uint16_t segment_count);
+static uint8_t Config_GetChannelsPerSegmentFor(const DeviceConfig_t *config);
 static uint16_t Config_GetChannelCountFor(const DeviceConfig_t *config);
 static uint8_t Config_GetUniverseCountFor(const DeviceConfig_t *config, bool *overflow);
 static int Config_ValidateCandidate(const DeviceConfig_t *config);
@@ -150,9 +153,9 @@ int DeviceConfig_GetSnapshot(DeviceConfig_t *config_out)
     return 0;
 }
 
-uint8_t DeviceConfig_GetChannelsPerPixel(void)
+uint8_t DeviceConfig_GetChannelsPerSegment(void)
 {
-    return Config_GetChannelsPerPixelFor(&active_config);
+    return Config_GetChannelsPerSegmentFor(&active_config);
 }
 
 uint16_t DeviceConfig_GetChannelCount(void)
@@ -263,17 +266,17 @@ int DeviceConfig_SetNetwork(const DeviceConfig_Network_t *network)
     return DeviceConfig_ApplyPatch(&patch, true, NULL);
 }
 
-int DeviceConfig_SetPixel(const DeviceConfig_Pixel_t *pixel)
+int DeviceConfig_SetLayout(const DeviceConfig_Layout_t *layout)
 {
     DeviceConfig_Patch_t patch;
 
-    if (pixel == NULL) {
+    if (layout == NULL) {
         return -1;
     }
 
     DeviceConfig_PatchInit(&patch);
-    patch.pixel_valid = true;
-    memcpy(&patch.pixel, pixel, sizeof(DeviceConfig_Pixel_t));
+    patch.layout_valid = true;
+    memcpy(&patch.layout, layout, sizeof(DeviceConfig_Layout_t));
 
     return DeviceConfig_ApplyPatch(&patch, true, NULL);
 }
@@ -416,19 +419,61 @@ static void Config_CopyString(char *dst, size_t dst_len, const char *src)
     memcpy(dst, src, copy_len);
 }
 
-static uint8_t Config_GetChannelsPerPixelFor(const DeviceConfig_t *config)
+static bool Config_IsSupportedSegmentCount(uint16_t pixel_count,
+                                           uint16_t segment_count)
 {
-    switch (config->pixel.pixel_format) {
-        case PIXEL_FORMAT_RGBW:  return 4;
-        case PIXEL_FORMAT_RGB16: return 6;
-        case PIXEL_FORMAT_RGB:
+    if (pixel_count == 0U || segment_count == 0U) {
+        return false;
+    }
+
+    if (segment_count > pixel_count || ((pixel_count % segment_count) != 0U)) {
+        return false;
+    }
+
+    // The current proof-of-concept fixture is a fixed 144-pixel product.
+    // Keep the supported personalities centralized here so future 288-pixel
+    // hardware can extend this policy without rewriting the render path.
+    switch (pixel_count) {
+        case 144U:
+            switch (segment_count) {
+                case 144U:
+                case 72U:
+                case 48U:
+                case 36U:
+                case 24U:
+                case 18U:
+                case 16U:
+                case 12U:
+                case 9U:
+                case 8U:
+                case 6U:
+                case 4U:
+                case 3U:
+                case 2U:
+                case 1U:
+                    return true;
+                default:
+                    return false;
+            }
+
+        default:
+            return false;
+    }
+}
+
+static uint8_t Config_GetChannelsPerSegmentFor(const DeviceConfig_t *config)
+{
+    switch (config->layout.segment_format) {
+        case SEGMENT_FORMAT_RGBW:  return 4;
+        case SEGMENT_FORMAT_RGB16: return 6;
+        case SEGMENT_FORMAT_RGB:
         default:                 return 3;
     }
 }
 
 static uint16_t Config_GetChannelCountFor(const DeviceConfig_t *config)
 {
-    return config->pixel.pixel_count * Config_GetChannelsPerPixelFor(config);
+    return config->layout.segment_count * Config_GetChannelsPerSegmentFor(config);
 }
 
 static uint8_t Config_GetUniverseCountFor(const DeviceConfig_t *config, bool *overflow)
@@ -481,13 +526,18 @@ static int Config_ValidateCandidate(const DeviceConfig_t *config)
         return -1;
     }
 
-    if (config->pixel.pixel_format != PIXEL_FORMAT_RGB &&
-        config->pixel.pixel_format != PIXEL_FORMAT_RGBW &&
-        config->pixel.pixel_format != PIXEL_FORMAT_RGB16) {
+    if (config->layout.segment_format != SEGMENT_FORMAT_RGB &&
+        config->layout.segment_format != SEGMENT_FORMAT_RGBW &&
+        config->layout.segment_format != SEGMENT_FORMAT_RGB16) {
         return -1;
     }
 
-    if (config->pixel.pixel_count > DEVICE_CONFIG_MAX_PIXELS) {
+    if (config->layout.pixel_count > DEVICE_CONFIG_MAX_PIXELS) {
+        return -1;
+    }
+
+    if (!Config_IsSupportedSegmentCount(config->layout.pixel_count,
+                                        config->layout.segment_count)) {
         return -1;
     }
 
@@ -545,8 +595,8 @@ static uint32_t Config_CalculateChangeMask(const DeviceConfig_t *before,
         change_mask |= DEVICE_CONFIG_CHANGE_NETWORK;
     }
 
-    if (memcmp(&before->pixel, &after->pixel, sizeof(DeviceConfig_Pixel_t)) != 0) {
-        change_mask |= DEVICE_CONFIG_CHANGE_PIXEL;
+    if (memcmp(&before->layout, &after->layout, sizeof(DeviceConfig_Layout_t)) != 0) {
+        change_mask |= DEVICE_CONFIG_CHANGE_LAYOUT;
     }
 
     if (before->dmx.input_source != after->dmx.input_source) {
@@ -595,8 +645,8 @@ static void Config_ApplyPatchToCandidate(DeviceConfig_t *candidate,
         memcpy(&candidate->network, &patch->network, sizeof(DeviceConfig_Network_t));
     }
 
-    if (patch->pixel_valid) {
-        memcpy(&candidate->pixel, &patch->pixel, sizeof(DeviceConfig_Pixel_t));
+    if (patch->layout_valid) {
+        memcpy(&candidate->layout, &patch->layout, sizeof(DeviceConfig_Layout_t));
     }
 
     if (patch->input_source_valid) {
