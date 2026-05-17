@@ -38,8 +38,8 @@ extern "C" {
 /** @brief Maximum length for device long name (Art-Net compatible: 63 chars + null) */
 #define DEVICE_CONFIG_LONG_NAME_LEN     64
 
-/** @brief Maximum number of pixels supported by the device */
-#define DEVICE_CONFIG_MAX_PIXELS        288
+/** @brief Maximum number of pixels supported by the current hardware build */
+#define DEVICE_CONFIG_MAX_PIXELS        144
 
 /** @brief Maximum DMX data length per universe (512 bytes per DMX512-A spec) */
 #define DMX_UNIVERSE_MAX_LENGTH         512
