@@ -456,7 +456,7 @@ void ControlTaskRun(void *argument)
 /* USER CODE END Header_EffectTaskRun */
 void EffectTaskRun(void *argument)
 {
-  /* USER CODE BEGIN StartEffectTask */
+  /* USER CODE BEGIN EffectTaskRun */
   // Wait until ControlTask has finished runtime initialization.
   osThreadFlagsWait(CONTROL_TASK_FLAG_INIT_READY, osFlagsWaitAny, osWaitForever);
   Pixel_Render_Init(&hsk9822);
@@ -490,7 +490,7 @@ void EffectTaskRun(void *argument)
       Pixel_Render_Refresh();
     }
   }
-  /* USER CODE END StartEffectTask */
+  /* USER CODE END EffectTaskRun */
 }
 
  /* MPU Configuration */
