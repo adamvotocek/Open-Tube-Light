@@ -38,6 +38,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define CONTROL_TASK_FLAG_INIT_READY  0x02U
 
 /* USER CODE END PD */
 
@@ -136,10 +137,13 @@ int main(void)
   MX_SPI1_Init();
   MX_UART5_Init();
   /* USER CODE BEGIN 2 */
-    //5V PSU disabled at startup
-    HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_RESET);
-    SK9822_Init(&hsk9822, &hspi1);
-    HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_SET);
+  
+  DeviceConfig_Init();
+
+  //5V PSU disabled at startup
+  HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_RESET);
+  SK9822_Init(&hsk9822, &hspi1);
+  HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_SET); // This is temporary: we must only enable the PSU if the input voltage is high enough
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -425,13 +429,13 @@ void ControlTaskRun(void *argument)
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
-  
-  // Initialize device configuration (loads from flash or uses factory defaults)
-  DeviceConfig_Init();
-  
+
   // Start the configured DMX input source (Art-Net, sACN, or DMX512)
   const DeviceConfig_t *cfg = DeviceConfig_Get();
   DMX_Input_Start(cfg->dmx.input_source, EffectTaskHandle);
+
+  // Release EffectTask only after the protocol input path is configured.
+  osThreadFlagsSet(EffectTaskHandle, CONTROL_TASK_FLAG_INIT_READY);
   
   /* Infinite loop */
   for(;;)
@@ -453,8 +457,8 @@ void ControlTaskRun(void *argument)
 void EffectTaskRun(void *argument)
 {
   /* USER CODE BEGIN StartEffectTask */
-  // Wait for initialization to complete
-  osDelay(100);
+  // Wait until ControlTask has finished runtime initialization.
+  osThreadFlagsWait(CONTROL_TASK_FLAG_INIT_READY, osFlagsWaitAny, osWaitForever);
   Pixel_Render_Init(&hsk9822);
 
   uint32_t last_frame_tick = 0;
