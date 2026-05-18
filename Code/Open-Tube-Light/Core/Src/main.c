@@ -54,11 +54,11 @@ DMA_HandleTypeDef hdma_spi1_tx;
 UART_HandleTypeDef huart5;
 DMA_HandleTypeDef hdma_uart5_rx;
 
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 256 * 4,
+/* Definitions for ControlTask */
+osThreadId_t ControlTaskHandle;
+const osThreadAttr_t ControlTask_attributes = {
+  .name = "ControlTask",
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for EffectTask */
@@ -66,7 +66,7 @@ osThreadId_t EffectTaskHandle;
 const osThreadAttr_t EffectTask_attributes = {
   .name = "EffectTask",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityAboveNormal5,
 };
 /* USER CODE BEGIN PV */
 SK9822_Handle_t hsk9822;
@@ -79,8 +79,8 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_UART5_Init(void);
-void StartDefaultTask(void *argument);
-void StartEffectTask(void *argument);
+void ControlTaskRun(void *argument);
+void EffectTaskRun(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -162,11 +162,11 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of ControlTask */
+  ControlTaskHandle = osThreadNew(ControlTaskRun, NULL, &ControlTask_attributes);
 
   /* creation of EffectTask */
-  EffectTaskHandle = osThreadNew(StartEffectTask, NULL, &EffectTask_attributes);
+  EffectTaskHandle = osThreadNew(EffectTaskRun, NULL, &EffectTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -413,14 +413,14 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
 }
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_ControlTaskRun */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the ControlTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+/* USER CODE END Header_ControlTaskRun */
+void ControlTaskRun(void *argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
@@ -443,14 +443,14 @@ void StartDefaultTask(void *argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartEffectTask */
+/* USER CODE BEGIN Header_EffectTaskRun */
 /**
 * @brief Function implementing the EffectTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartEffectTask */
-void StartEffectTask(void *argument)
+/* USER CODE END Header_EffectTaskRun */
+void EffectTaskRun(void *argument)
 {
   /* USER CODE BEGIN StartEffectTask */
   // Wait for initialization to complete
