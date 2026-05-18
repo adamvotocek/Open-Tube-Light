@@ -74,7 +74,11 @@ ETH.RxDescAddress=0x30000000
 ETH.TxDescAddress=0x300001e0
 FREERTOS.FootprintOK=true
 FREERTOS.IPParameters=Tasks01,FootprintOK,configUSE_NEWLIB_REENTRANT,configCHECK_FOR_STACK_OVERFLOW
+<<<<<<< HEAD
 FREERTOS.Tasks01=ControlTask,16,512,ControlTaskRun,Default,NULL,Dynamic,NULL,NULL;EffectTask,32,512,EffectTaskRun,Default,NULL,Dynamic,NULL,NULL
+=======
+FREERTOS.Tasks01=ControlTask,24,512,ControlTaskRun,Default,NULL,Dynamic,NULL,NULL;EffectTask,37,512,EffectTaskRun,Default,NULL,Dynamic,NULL,NULL
+>>>>>>> c7d20aaa21af8882825b2e8e5c68b0fcfa02e844
 FREERTOS.configCHECK_FOR_STACK_OVERFLOW=2
 FREERTOS.configUSE_NEWLIB_REENTRANT=1
 File.Version=6
