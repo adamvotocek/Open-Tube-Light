@@ -1,5 +1,31 @@
 # OpenTubeLight - Code Documentation
 
+## BUGS:
+
+### DMX input periodic glitches
+- need to text more
+
+### Random light glitches, when connected to home network
+- artnet input. 
+- doesnt happen when connecting directly with a laptop, only on the home network
+
+Findings:
+1. High dimmer input, 8 segments: Flashes appear across the whole length of the strip
+2. High dimmer input, 144 segments: Flashes seem to be more concentrated at the beginning of the strip, suggesting a DMX problem in the first few adresses, but sometiimes it flashes more towards the middle of the strip
+3. Low dimmer input, changes with color, 8 segments: when sending a dark blue sine wave from light key at around 1 percent master dimmer, there are some dim green flashes in the first few LEDs of the strip. They don't span across one whole segment, which is weird as it indicates a problem with how the LED strip is driven?
+ - actually, this happens with high dimmer also.
+
+All of this seems to be color dependent for some reason. 
+
+8seg: When sending from qlc and freezing the universe output at a blueish colors, the flashes happen frequently. With red, green only, no problems. When sending zeroes, no problems. 
+
+8seg: When controlling from simple desk in qlc: when setting all 8 blues to full and dimming the red or green colors, the flashes begin to happen. Not with blue only, not with red or green only. Also, some are full segment, some are just an led at the beginning. Also, in simple desk, it seems like only the few segment affects things, not all.
+
+144seg: Actually, it seems that it is not color dependent. Simple desk changing first red, green, blue gives flashes.
+
+I didn't see the flashes in wireshark dmx data.
+
+
 ## Very unorganized TODO LIST:
 - spi led strips should be continuously updated, even if no new data is received. this is because interference can cause artifacts in the led strip over time. (maybe every 300 ms or so)
 - Class A ip addressing after conneciton per artnet spec
