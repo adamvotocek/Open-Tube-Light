@@ -28,6 +28,7 @@
 #include "pixel_render.h"
 #include "device_config.h"
 #include "dmx_input.h"
+#include "stm32h7xx_hal_gpio.h"
 #include "stm32h7xx_hal_uart.h"
 #include "OLED/ssd1306.h"
 #include "OLED/ssd1306_fonts.h"
@@ -41,6 +42,11 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define CONTROL_TASK_FLAG_INIT_READY  0x02U
+
+// OLED demo
+#define OLED_DEMO_UPDATE_PERIOD_MS    250U
+#define OLED_DEMO_FLUSH_TIMEOUT_MS    100U
+#define OLED_DEMO_BAR_WIDTH           18U
 
 /* USER CODE END PD */
 
@@ -90,11 +96,55 @@ void ControlTaskRun(void *argument);
 void EffectTaskRun(void *argument);
 
 /* USER CODE BEGIN PFP */
+static void OledDemo_DrawFrame(uint32_t frame_index);
+static void OledDemo_RunStep(uint32_t frame_index);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void OledDemo_DrawFrame(uint32_t frame_index) {
+  uint8_t bar_x = (uint8_t)((frame_index * 4U) % (SSD1306_WIDTH - OLED_DEMO_BAR_WIDTH));
+
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(0, 0);
+  (void)ssd1306_WriteString("OLED DMA/RTOS", Font_7x10, White);
+  ssd1306_SetCursor(0, 14);
+  (void)ssd1306_WriteString("Async flush demo", Font_6x8, White);
+  ssd1306_SetCursor(0, 52);
+  (void)ssd1306_WriteString("ControlTask owner", Font_6x8, White);
+
+  ssd1306_DrawRectangle(0, 30, SSD1306_WIDTH - 1U, 42, White);
+  ssd1306_FillRectangle((uint8_t)(bar_x + 1U), 31, (uint8_t)(bar_x + OLED_DEMO_BAR_WIDTH), 41, White);
+
+  if ((frame_index & 1U) != 0U) {
+    ssd1306_FillRectangle(SSD1306_WIDTH - 9U, 0, SSD1306_WIDTH - 1U, 8, White);
+  }
+}
+
+static void OledDemo_RunStep(uint32_t frame_index) {
+  SSD1306_Error_t status;
+
+  OledDemo_DrawFrame(frame_index);
+
+  /*
+   * Start the OLED flush over I2C DMA, then only block when we need bounded
+   * confirmation that the transfer completed.
+   */
+  status = ssd1306_UpdateScreenAsync();
+  if (status == SSD1306_BUSY) {
+    status = ssd1306_WaitForUpdate(OLED_DEMO_FLUSH_TIMEOUT_MS);
+    if (status == SSD1306_OK) {
+      status = ssd1306_UpdateScreenAsync();
+    }
+  }
+
+  if (status == SSD1306_OK) {
+    HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
+    (void)ssd1306_WaitForUpdate(OLED_DEMO_FLUSH_TIMEOUT_MS);
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -152,15 +202,6 @@ int main(void)
   SK9822_Init(&hsk9822, &hspi1);
   HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_SET); // This is temporary: we must only enable the PSU if the input voltage is high enough
   /* USER CODE END 2 */
-
-  // OLED Test
-  char test_str[] = "Hello, World!";
-  char return_val;
-  ssd1306_Init();
-  // ssd1306_Fill(White);
-  ssd1306_SetCursor(5, 30);
-  return_val = ssd1306_WriteString(test_str, Font_7x10, White);
-  ssd1306_UpdateScreen();
 
   /* Init scheduler */
   osKernelInitialize();
@@ -521,15 +562,22 @@ void ControlTaskRun(void *argument)
   const DeviceConfig_t *cfg = DeviceConfig_Get();
   DMX_Input_Start(cfg->dmx.input_source, EffectTaskHandle);
 
+  /* Keep OLED ownership inside ControlTask so the demo exercises the RTOS-aware DMA path. */
+  ssd1306_Init();
+  OledDemo_RunStep(0U);
+
   // Release EffectTask only after the protocol input path is configured.
   osThreadFlagsSet(EffectTaskHandle, CONTROL_TASK_FLAG_INIT_READY);
   
+  uint32_t oled_demo_frame_index = 1U;
+
   /* Infinite loop */
   for(;;)
   {
-    // Toggle LED to show system is alive
     HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
-    osDelay(500);
+    // osDelay(500);
+    OledDemo_RunStep(oled_demo_frame_index++);
+    osDelay(OLED_DEMO_UPDATE_PERIOD_MS);
   }
   /* USER CODE END 5 */
 }
