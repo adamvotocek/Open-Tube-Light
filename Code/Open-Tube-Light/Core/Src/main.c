@@ -482,6 +482,14 @@ static void MX_GPIO_Init(void)
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
     SK9822_OnTxComplete(&hsk9822, hspi);
 }
+
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
+  ssd1306_I2C_MasterTxCpltCallback(hi2c);
+}
+
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
+  ssd1306_I2C_ErrorCallback(hi2c);
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_ControlTaskRun */

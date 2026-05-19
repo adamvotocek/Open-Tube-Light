@@ -3,6 +3,54 @@
 #include <stdlib.h>
 #include <string.h>  // For memcpy
 
+#if defined(SSD1306_USE_RTOS)
+#include "cmsis_os2.h"
+#endif
+
+#define SSD1306_I2C_COMMAND_CONTROL_BYTE  0x00U
+#define SSD1306_I2C_DATA_CONTROL_BYTE     0x40U
+
+#if defined(SSD1306_X_OFFSET)
+#define SSD1306_X_START                   SSD1306_X_OFFSET
+#else
+#define SSD1306_X_START                   0U
+#endif
+
+#define SSD1306_PAGE_COUNT                (SSD1306_HEIGHT / 8U)
+
+static void ssd1306_DelayMs(uint32_t delay_ms);
+static uint8_t ssd1306_KernelIsRunning(void);
+
+#if defined(SSD1306_USE_I2C)
+static HAL_StatusTypeDef ssd1306_WriteCommandList(const uint8_t *commands, size_t command_count);
+#endif
+
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+/*
+ * Runtime state for the optional I2C DMA transport.
+ *
+ * SSD1306_Buffer remains the canonical drawing framebuffer.
+ * SSD1306_I2C_TransferBuffer is only a transport staging buffer with the
+ * required I2C control byte prepended so the full frame can be sent by DMA.
+ */
+typedef struct {
+    volatile uint8_t transfer_in_progress;
+    volatile HAL_StatusTypeDef last_status;
+#if defined(SSD1306_USE_RTOS)
+    osSemaphoreId_t completion_semaphore;
+#endif
+} SSD1306_I2C_State_t;
+
+static SSD1306_I2C_State_t ssd1306_i2c_state;
+static uint8_t SSD1306_I2C_TransferBuffer[SSD1306_BUFFER_SIZE + 1U] SSD1306_DMA_BUFFER_ATTRIBUTE;
+
+static SSD1306_Error_t ssd1306_EnsureSynchronization(void);
+static void ssd1306_ResetCompletionSemaphore(void);
+static void ssd1306_PrepareTransferBuffer(void);
+static SSD1306_Error_t ssd1306_StartUpdateTransfer(void);
+static SSD1306_Error_t ssd1306_UpdateScreenBlocking(void);
+#endif
+
 #if defined(SSD1306_USE_I2C)
 
 void ssd1306_Reset(void) {
@@ -11,12 +59,24 @@ void ssd1306_Reset(void) {
 
 // Send a byte to the command register
 void ssd1306_WriteCommand(uint8_t byte) {
-    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x00, 1, &byte, 1, HAL_MAX_DELAY);
+#if defined(SSD1306_USE_DMA) && defined(SSD1306_USE_RTOS)
+    if (ssd1306_KernelIsRunning() != 0U) {
+        (void)ssd1306_WaitForUpdate(osWaitForever);
+    }
+#endif
+
+    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x00, 1, &byte, 1, SSD1306_I2C_TIMEOUT_MS);
 }
 
 // Send data
 void ssd1306_WriteData(uint8_t* buffer, size_t buff_size) {
-    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x40, 1, buffer, buff_size, HAL_MAX_DELAY);
+#if defined(SSD1306_USE_DMA) && defined(SSD1306_USE_RTOS)
+    if (ssd1306_KernelIsRunning() != 0U) {
+        (void)ssd1306_WaitForUpdate(osWaitForever);
+    }
+#endif
+
+    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x40, 1, buffer, buff_size, SSD1306_I2C_TIMEOUT_MS);
 }
 
 #elif defined(SSD1306_USE_SPI)
@@ -27,9 +87,9 @@ void ssd1306_Reset(void) {
 
     // Reset the OLED
     HAL_GPIO_WritePin(SSD1306_Reset_Port, SSD1306_Reset_Pin, GPIO_PIN_RESET);
-    HAL_Delay(10);
+    ssd1306_DelayMs(10);
     HAL_GPIO_WritePin(SSD1306_Reset_Port, SSD1306_Reset_Pin, GPIO_PIN_SET);
-    HAL_Delay(10);
+    ssd1306_DelayMs(10);
 }
 
 // Send a byte to the command register
@@ -59,6 +119,137 @@ static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
 // Screen object
 static SSD1306_t SSD1306;
 
+/* Use one helper for all kernel-state checks so startup and runtime behavior stay consistent. */
+static uint8_t ssd1306_KernelIsRunning(void) {
+#if defined(SSD1306_USE_RTOS)
+    return (osKernelGetState() == osKernelRunning) ? 1U : 0U;
+#else
+    return 0U;
+#endif
+}
+
+static void ssd1306_DelayMs(uint32_t delay_ms) {
+#if defined(SSD1306_USE_RTOS)
+    if (ssd1306_KernelIsRunning() != 0U) {
+        osDelay(delay_ms);
+        return;
+    }
+#endif
+    HAL_Delay(delay_ms);
+}
+
+#if defined(SSD1306_USE_I2C)
+static HAL_StatusTypeDef ssd1306_WriteCommandList(const uint8_t *commands, size_t command_count) {
+    uint8_t transfer_buffer[7];
+
+    if ((commands == NULL) || (command_count == 0U) || (command_count > 6U)) {
+        return HAL_ERROR;
+    }
+
+    transfer_buffer[0] = SSD1306_I2C_COMMAND_CONTROL_BYTE;
+    memcpy(&transfer_buffer[1], commands, command_count);
+
+    return HAL_I2C_Master_Transmit(&SSD1306_I2C_PORT,
+                                   SSD1306_I2C_ADDR,
+                                   transfer_buffer,
+                                   (uint16_t)(command_count + 1U),
+                                   SSD1306_I2C_TIMEOUT_MS);
+}
+#endif
+
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+static SSD1306_Error_t ssd1306_EnsureSynchronization(void) {
+#if defined(SSD1306_USE_RTOS)
+    if (!ssd1306_KernelIsRunning()) {
+        return SSD1306_OK;
+    }
+
+    if (ssd1306_i2c_state.completion_semaphore != NULL) {
+        return SSD1306_OK;
+    }
+
+    ssd1306_i2c_state.completion_semaphore = osSemaphoreNew(1U, 0U, NULL);
+    return (ssd1306_i2c_state.completion_semaphore != NULL) ? SSD1306_OK : SSD1306_ERR;
+#else
+    return SSD1306_OK;
+#endif
+}
+
+static void ssd1306_ResetCompletionSemaphore(void) {
+#if defined(SSD1306_USE_RTOS)
+    if (ssd1306_i2c_state.completion_semaphore == NULL) {
+        return;
+    }
+
+    while (osSemaphoreAcquire(ssd1306_i2c_state.completion_semaphore, 0U) == osOK) {
+    }
+#endif
+}
+
+static void ssd1306_PrepareTransferBuffer(void) {
+    SSD1306_I2C_TransferBuffer[0] = SSD1306_I2C_DATA_CONTROL_BYTE;
+    memcpy(&SSD1306_I2C_TransferBuffer[1], SSD1306_Buffer, SSD1306_BUFFER_SIZE);
+}
+
+/* Blocking fallback path used before the kernel starts and whenever DMA startup fails. */
+static SSD1306_Error_t ssd1306_UpdateScreenBlocking(void) {
+    static const uint8_t update_commands[] = {
+        0x21, SSD1306_X_START, (uint8_t)(SSD1306_X_START + SSD1306_WIDTH - 1U),
+        0x22, 0x00, (uint8_t)(SSD1306_PAGE_COUNT - 1U)
+    };
+
+    if (ssd1306_WriteCommandList(update_commands, sizeof(update_commands)) != HAL_OK) {
+        return SSD1306_ERR;
+    }
+
+    ssd1306_PrepareTransferBuffer();
+
+    return (HAL_I2C_Master_Transmit(&SSD1306_I2C_PORT,
+                                    SSD1306_I2C_ADDR,
+                                    SSD1306_I2C_TransferBuffer,
+                                    sizeof(SSD1306_I2C_TransferBuffer),
+                                    SSD1306_I2C_TIMEOUT_MS) == HAL_OK) ? SSD1306_OK : SSD1306_ERR;
+}
+
+/* Non-blocking runtime path: program the address window, then flush the whole frame over DMA. */
+static SSD1306_Error_t ssd1306_StartUpdateTransfer(void) {
+    static const uint8_t update_commands[] = {
+        0x21, SSD1306_X_START, (uint8_t)(SSD1306_X_START + SSD1306_WIDTH - 1U),
+        0x22, 0x00, (uint8_t)(SSD1306_PAGE_COUNT - 1U)
+    };
+
+    if (ssd1306_i2c_state.transfer_in_progress != 0U) {
+        return SSD1306_BUSY;
+    }
+
+    if (ssd1306_WriteCommandList(update_commands, sizeof(update_commands)) != HAL_OK) {
+        ssd1306_i2c_state.last_status = HAL_ERROR;
+        return SSD1306_ERR;
+    }
+
+    if (ssd1306_EnsureSynchronization() != SSD1306_OK) {
+        ssd1306_i2c_state.last_status = HAL_ERROR;
+        return SSD1306_ERR;
+    }
+
+    ssd1306_PrepareTransferBuffer();
+    ssd1306_ResetCompletionSemaphore();
+    ssd1306_i2c_state.transfer_in_progress = 1U;
+    ssd1306_i2c_state.last_status = HAL_BUSY;
+
+    if (HAL_I2C_Master_Transmit_DMA(&SSD1306_I2C_PORT,
+                                    SSD1306_I2C_ADDR,
+                                    SSD1306_I2C_TransferBuffer,
+                                    sizeof(SSD1306_I2C_TransferBuffer)) != HAL_OK) {
+        ssd1306_i2c_state.transfer_in_progress = 0U;
+        ssd1306_i2c_state.last_status = HAL_ERROR;
+        return SSD1306_ERR;
+    }
+
+    return SSD1306_OK;
+}
+#endif
+
 /* Fills the Screenbuffer with values from a given buffer of a fixed length */
 SSD1306_Error_t ssd1306_FillBuffer(uint8_t* buf, uint32_t len) {
     SSD1306_Error_t ret = SSD1306_ERR;
@@ -75,7 +266,7 @@ void ssd1306_Init(void) {
     ssd1306_Reset();
 
     // Wait for the screen to boot
-    HAL_Delay(100);
+    ssd1306_DelayMs(100);
 
     // Init OLED
     ssd1306_SetDisplayOn(0); //display off
@@ -178,6 +369,23 @@ void ssd1306_Fill(SSD1306_COLOR color) {
 
 /* Write the screenbuffer with changed to the screen */
 void ssd1306_UpdateScreen(void) {
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+    if (ssd1306_KernelIsRunning() != 0U) {
+        SSD1306_Error_t status = ssd1306_StartUpdateTransfer();
+
+        if (status == SSD1306_BUSY) {
+            (void)ssd1306_WaitForUpdate(osWaitForever);
+            status = ssd1306_StartUpdateTransfer();
+        }
+
+        if (status == SSD1306_OK) {
+            (void)ssd1306_WaitForUpdate(osWaitForever);
+            return;
+        }
+    }
+
+    (void)ssd1306_UpdateScreenBlocking();
+#else
     // Write data to each page of RAM. Number of pages
     // depends on the screen height:
     //
@@ -190,6 +398,49 @@ void ssd1306_UpdateScreen(void) {
         ssd1306_WriteCommand(0x10 + SSD1306_X_OFFSET_UPPER);
         ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH*i],SSD1306_WIDTH);
     }
+#endif
+}
+
+SSD1306_Error_t ssd1306_UpdateScreenAsync(void) {
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+    if (ssd1306_KernelIsRunning() == 0U) {
+        return ssd1306_UpdateScreenBlocking();
+    }
+
+    return ssd1306_StartUpdateTransfer();
+#else
+    ssd1306_UpdateScreen();
+    return SSD1306_OK;
+#endif
+}
+
+SSD1306_Error_t ssd1306_WaitForUpdate(uint32_t timeout_ms) {
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA) && defined(SSD1306_USE_RTOS)
+    if ((ssd1306_KernelIsRunning() == 0U) || (ssd1306_i2c_state.transfer_in_progress == 0U)) {
+        return (ssd1306_i2c_state.last_status == HAL_OK) ? SSD1306_OK : SSD1306_ERR;
+    }
+
+    if (ssd1306_i2c_state.completion_semaphore == NULL) {
+        return SSD1306_ERR;
+    }
+
+    if (osSemaphoreAcquire(ssd1306_i2c_state.completion_semaphore, timeout_ms) != osOK) {
+        return SSD1306_TIMEOUT;
+    }
+
+    return (ssd1306_i2c_state.last_status == HAL_OK) ? SSD1306_OK : SSD1306_ERR;
+#else
+    (void)timeout_ms;
+    return SSD1306_OK;
+#endif
+}
+
+uint8_t ssd1306_IsReady(void) {
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+    return (ssd1306_i2c_state.transfer_in_progress == 0U) ? 1U : 0U;
+#else
+    return 1U;
+#endif
 }
 
 /*
@@ -591,3 +842,37 @@ void ssd1306_SetDisplayOn(const uint8_t on) {
 uint8_t ssd1306_GetDisplayOn() {
     return SSD1306.DisplayOn;
 }
+
+#if defined(SSD1306_USE_I2C) && defined(SSD1306_USE_DMA)
+/* Forward HAL I2C callbacks here so the library can close out an async flush. */
+void ssd1306_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
+    if ((hi2c != &SSD1306_I2C_PORT) || (ssd1306_i2c_state.transfer_in_progress == 0U)) {
+        return;
+    }
+
+    ssd1306_i2c_state.last_status = HAL_OK;
+    ssd1306_i2c_state.transfer_in_progress = 0U;
+
+#if defined(SSD1306_USE_RTOS)
+    if (ssd1306_i2c_state.completion_semaphore != NULL) {
+        (void)osSemaphoreRelease(ssd1306_i2c_state.completion_semaphore);
+    }
+#endif
+}
+
+/* Any I2C transport error aborts the active DMA flush and releases the waiter. */
+void ssd1306_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
+    if ((hi2c != &SSD1306_I2C_PORT) || (ssd1306_i2c_state.transfer_in_progress == 0U)) {
+        return;
+    }
+
+    ssd1306_i2c_state.last_status = HAL_ERROR;
+    ssd1306_i2c_state.transfer_in_progress = 0U;
+
+#if defined(SSD1306_USE_RTOS)
+    if (ssd1306_i2c_state.completion_semaphore != NULL) {
+        (void)osSemaphoreRelease(ssd1306_i2c_state.completion_semaphore);
+    }
+#endif
+}
+#endif
