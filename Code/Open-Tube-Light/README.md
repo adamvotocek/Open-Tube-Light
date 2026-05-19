@@ -2,12 +2,34 @@
 
 ## BUGS:
 
+### The device is not discoverable, or broadcastable with a direct ethernet connection to a laptop
+- this may be an issue with the networking settings on the laptop, or with the networking settings of the device, or both.
+
+#### When the direct connection doesn't work:
+- connecting straight to the laptop, after reset, or before reset
+
+Laptop's network settings:
+- Manual IP address: 192.168.1.2
+- Manual subnet mask: 255.255.255.0
+- Manual router: 192.168.1.3
+
+Device's network settings:
+- idk, dhcp enabled
+
+#### When the direct connection works:
+- When we start the device and connect it to my larger home network, it works as it should - responds to data on the network. If I then unplug the device's ethernet from my home network and connect it directly to the laptop, it is discoverable and works great with the direct connection. However, if I restart the device, it stops working on the direct connection.
+
+- The laptop's network settings are the same as above
+
+
 ### DMX input periodic glitches
 - need to text more
 
 ### Random light glitches, when connected to home network
 - artnet input. 
 - doesnt happen when connecting directly with a laptop, only on the home network
+
+this shit seems to happen with a firmware version before DMX512 was even implemented, so the issue is long. However, double check this, I am not sure if I remember correctly.
 
 UPDATE: THIS HAPPENS ON A DIRECT CONNECTION TOO. (connecting directly after being connected to the home network), i have to test if it happens after a power cycle without ever connecting to the home network.
 
