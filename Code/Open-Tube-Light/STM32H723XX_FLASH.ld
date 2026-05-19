@@ -279,7 +279,8 @@ SECTIONS
 
     . = ALIGN(32);
     KEEP(*(.spi_buffers))       /* SK9822 LED strip SPI DMA buffers */
-    KEEP(*(.uart_buffers))      /* DMX UART DMA buffers (future) */
+    KEEP(*(.uart_buffers))      /* DMX UART DMA buffers */
+    KEEP(*(.i2c_buffers))       /* OLED I2C DMA buffers */
     . = ALIGN(32);
   } >RAM_D2
 

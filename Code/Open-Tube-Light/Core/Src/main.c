@@ -29,6 +29,8 @@
 #include "device_config.h"
 #include "dmx_input.h"
 #include "stm32h7xx_hal_uart.h"
+#include "OLED/ssd1306.h"
+#include "OLED/ssd1306_fonts.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -150,6 +152,15 @@ int main(void)
   SK9822_Init(&hsk9822, &hspi1);
   HAL_GPIO_WritePin(PSU_5V_EN_GPIO_Port, PSU_5V_EN_Pin, GPIO_PIN_SET); // This is temporary: we must only enable the PSU if the input voltage is high enough
   /* USER CODE END 2 */
+
+  // OLED Test
+  char test_str[] = "Hello, World!";
+  char return_val;
+  ssd1306_Init();
+  // ssd1306_Fill(White);
+  ssd1306_SetCursor(5, 30);
+  return_val = ssd1306_WriteString(test_str, Font_7x10, White);
+  ssd1306_UpdateScreen();
 
   /* Init scheduler */
   osKernelInitialize();
@@ -485,6 +496,18 @@ void ControlTaskRun(void *argument)
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
+  
+  // Context for the UI implementation
+  // 
+  // I2C:
+  // - enabled with dma and dma transfer interrupt
+  // - added a .i2c_buffers section in D2 for the dma buffers
+  // 
+  // Button mapping:
+  // - BUTTON1: UP
+  // - BUTTON2: DOWN
+  // - BUTTON3: MENU/BACK
+  // - BUTTON4: ENTER/SELECT
 
   // Start the configured DMX input source (Art-Net, sACN, or DMX512)
   const DeviceConfig_t *cfg = DeviceConfig_Get();
