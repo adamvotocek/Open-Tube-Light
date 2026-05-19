@@ -53,11 +53,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/Art-Net/artnet_handlers.c
     Core/Src/Art-Net/artnet_pollreply.c
     Core/Src/DMX512/dmx512_uart.c
+    Core/Src/OLED/ssd1306.c
+    Core/Src/OLED/ssd1306_fonts.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Core/Inc/OLED
 )
 
 # Add project symbols (macros)
