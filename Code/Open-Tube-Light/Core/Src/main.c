@@ -32,6 +32,10 @@
 #include "stm32h7xx_hal_uart.h"
 #include "OLED/ssd1306.h"
 #include "OLED/ssd1306_fonts.h"
+
+// Included for OLED status page
+#include <stdio.h>
+#include "lwip/ip4_addr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,10 +47,12 @@
 /* USER CODE BEGIN PD */
 #define CONTROL_TASK_FLAG_INIT_READY  0x02U
 
-// OLED demo
-#define OLED_DEMO_UPDATE_PERIOD_MS    250U
-#define OLED_DEMO_FLUSH_TIMEOUT_MS    100U
-#define OLED_DEMO_BAR_WIDTH           18U
+// OLED status page
+#define OLED_STATUS_UPDATE_PERIOD_MS   1000U
+#define OLED_STATUS_FLUSH_TIMEOUT_MS   100U
+#define OLED_STATUS_LINE_HEIGHT        12U
+#define OLED_STATUS_IPV4_TEXT_LEN      IP4ADDR_STRLEN_MAX
+#define OLED_STATUS_LINE_BUFFER_LEN    24U
 
 /* USER CODE END PD */
 
@@ -82,6 +88,9 @@ const osThreadAttr_t EffectTask_attributes = {
 };
 /* USER CODE BEGIN PV */
 SK9822_Handle_t hsk9822;
+
+// For OLED status page
+extern struct netif gnetif;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,37 +105,114 @@ void ControlTaskRun(void *argument);
 void EffectTaskRun(void *argument);
 
 /* USER CODE BEGIN PFP */
-static void OledDemo_DrawFrame(uint32_t frame_index);
-static void OledDemo_RunStep(uint32_t frame_index);
+static const char *OledStatus_GetProtocolText(DeviceConfig_DmxInput_t input_source);
+static void OledStatus_FormatIpv4(char *text, size_t text_len, const ip4_addr_t *address);
+static void OledStatus_FormatIpv4Bytes(char *text, size_t text_len, const uint8_t address[4]);
+static void OledStatus_Draw(void);
+static void OledStatus_RunStep(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-static void OledDemo_DrawFrame(uint32_t frame_index) {
-  uint8_t bar_x = (uint8_t)((frame_index * 4U) % (SSD1306_WIDTH - OLED_DEMO_BAR_WIDTH));
+static const char *OledStatus_GetProtocolText(DeviceConfig_DmxInput_t input_source) {
+  switch (input_source) {
+    case DMX_INPUT_ARTNET:
+      return "Art-Net";
 
-  ssd1306_Fill(Black);
-  ssd1306_SetCursor(0, 0);
-  (void)ssd1306_WriteString("OLED DMA/RTOS", Font_7x10, White);
-  ssd1306_SetCursor(0, 14);
-  (void)ssd1306_WriteString("Async flush demo", Font_6x8, White);
-  ssd1306_SetCursor(0, 52);
-  (void)ssd1306_WriteString("ControlTask owner", Font_6x8, White);
+    case DMX_INPUT_SACN:
+      return "sACN";
 
-  ssd1306_DrawRectangle(0, 30, SSD1306_WIDTH - 1U, 42, White);
-  ssd1306_FillRectangle((uint8_t)(bar_x + 1U), 31, (uint8_t)(bar_x + OLED_DEMO_BAR_WIDTH), 41, White);
+    case DMX_INPUT_DMX512:
+      return "DMX512";
 
-  if ((frame_index & 1U) != 0U) {
-    ssd1306_FillRectangle(SSD1306_WIDTH - 9U, 0, SSD1306_WIDTH - 1U, 8, White);
+    default:
+      return "Unknown";
   }
 }
 
-static void OledDemo_RunStep(uint32_t frame_index) {
+static void OledStatus_FormatIpv4(char *text, size_t text_len, const ip4_addr_t *address) {
+  if ((text == NULL) || (text_len == 0U) || (address == NULL)) {
+    return;
+  }
+
+  if (ip4addr_ntoa_r(address, text, (int)text_len) == NULL) {
+    text[0] = '?';
+    text[1] = '\0';
+  }
+}
+
+static void OledStatus_FormatIpv4Bytes(char *text, size_t text_len, const uint8_t address[4]) {
+  ip4_addr_t ipv4_address;
+
+  if (address == NULL) {
+    if ((text != NULL) && (text_len > 0U)) {
+      text[0] = '\0';
+    }
+    return;
+  }
+
+  IP4_ADDR(&ipv4_address, address[0], address[1], address[2], address[3]);
+  OledStatus_FormatIpv4(text, text_len, &ipv4_address);
+}
+
+static void OledStatus_Draw(void) {
+  const DeviceConfig_t *cfg = DeviceConfig_Get();
+  char segments_line[OLED_STATUS_LINE_BUFFER_LEN];
+  char protocol_line[OLED_STATUS_LINE_BUFFER_LEN];
+  char dmx_line[OLED_STATUS_LINE_BUFFER_LEN];
+  char ip_line[OLED_STATUS_LINE_BUFFER_LEN];
+  char mask_line[OLED_STATUS_LINE_BUFFER_LEN];
+  char ip_text[OLED_STATUS_IPV4_TEXT_LEN];
+  char mask_text[OLED_STATUS_IPV4_TEXT_LEN];
+
+  if (cfg == NULL) {
+    return;
+  }
+
+  /* Static network config is not applied to lwIP yet, so show saved static
+   * values in static mode and the live lease while DHCP is active. */
+  if (cfg->network.ip_mode == IP_MODE_STATIC) {
+    OledStatus_FormatIpv4Bytes(ip_text, sizeof(ip_text), cfg->network.static_ip);
+    OledStatus_FormatIpv4Bytes(mask_text, sizeof(mask_text), cfg->network.static_mask);
+  } else {
+    OledStatus_FormatIpv4(ip_text, sizeof(ip_text), netif_ip4_addr(&gnetif));
+    OledStatus_FormatIpv4(mask_text, sizeof(mask_text), netif_ip4_netmask(&gnetif));
+  }
+
+  (void)snprintf(segments_line,
+                 sizeof(segments_line),
+                 "Seg:%u",
+                 (unsigned int)cfg->layout.segment_count);
+  (void)snprintf(protocol_line,
+                 sizeof(protocol_line),
+                 "Prot:%s",
+                 OledStatus_GetProtocolText(cfg->dmx.input_source));
+  (void)snprintf(dmx_line,
+                 sizeof(dmx_line),
+                 "DMX:%u",
+                 (unsigned int)cfg->dmx.dmx_start_address);
+  (void)snprintf(ip_line, sizeof(ip_line), "IP:%s", ip_text);
+  (void)snprintf(mask_line, sizeof(mask_line), "Mask:%s", mask_text);
+
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(0, 0);
+  (void)ssd1306_WriteString(segments_line, Font_6x8, White);
+  ssd1306_SetCursor(0, OLED_STATUS_LINE_HEIGHT);
+  (void)ssd1306_WriteString(protocol_line, Font_6x8, White);
+  ssd1306_SetCursor(0, 2U * OLED_STATUS_LINE_HEIGHT);
+  (void)ssd1306_WriteString(dmx_line, Font_6x8, White);
+  ssd1306_SetCursor(0, 3U * OLED_STATUS_LINE_HEIGHT);
+  (void)ssd1306_WriteString(ip_line, Font_6x8, White);
+  ssd1306_SetCursor(0, 4U * OLED_STATUS_LINE_HEIGHT);
+  (void)ssd1306_WriteString(mask_line, Font_6x8, White);
+}
+
+static void OledStatus_RunStep(void) {
   SSD1306_Error_t status;
 
-  OledDemo_DrawFrame(frame_index);
+  OledStatus_Draw();
 
   /*
    * Start the OLED flush over I2C DMA, then only block when we need bounded
@@ -134,7 +220,7 @@ static void OledDemo_RunStep(uint32_t frame_index) {
    */
   status = ssd1306_UpdateScreenAsync();
   if (status == SSD1306_BUSY) {
-    status = ssd1306_WaitForUpdate(OLED_DEMO_FLUSH_TIMEOUT_MS);
+    status = ssd1306_WaitForUpdate(OLED_STATUS_FLUSH_TIMEOUT_MS);
     if (status == SSD1306_OK) {
       status = ssd1306_UpdateScreenAsync();
     }
@@ -142,7 +228,7 @@ static void OledDemo_RunStep(uint32_t frame_index) {
 
   if (status == SSD1306_OK) {
     HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
-    (void)ssd1306_WaitForUpdate(OLED_DEMO_FLUSH_TIMEOUT_MS);
+    (void)ssd1306_WaitForUpdate(OLED_STATUS_FLUSH_TIMEOUT_MS);
   }
 }
 
@@ -562,22 +648,18 @@ void ControlTaskRun(void *argument)
   const DeviceConfig_t *cfg = DeviceConfig_Get();
   DMX_Input_Start(cfg->dmx.input_source, EffectTaskHandle);
 
-  /* Keep OLED ownership inside ControlTask so the demo exercises the RTOS-aware DMA path. */
+  /* Keep OLED ownership inside ControlTask so the status page uses the RTOS-aware DMA path. */
   ssd1306_Init();
-  OledDemo_RunStep(0U);
+  OledStatus_RunStep();
 
   // Release EffectTask only after the protocol input path is configured.
   osThreadFlagsSet(EffectTaskHandle, CONTROL_TASK_FLAG_INIT_READY);
-  
-  uint32_t oled_demo_frame_index = 1U;
 
   /* Infinite loop */
   for(;;)
   {
-    HAL_GPIO_TogglePin(LED_RED_GPIO_Port, LED_RED_Pin);
-    // osDelay(500);
-    OledDemo_RunStep(oled_demo_frame_index++);
-    osDelay(OLED_DEMO_UPDATE_PERIOD_MS);
+    OledStatus_RunStep();
+    osDelay(OLED_STATUS_UPDATE_PERIOD_MS);
   }
   /* USER CODE END 5 */
 }
