@@ -9,6 +9,8 @@
 - artnet input. 
 - doesnt happen when connecting directly with a laptop, only on the home network
 
+UPDATE: THIS HAPPENS ON A DIRECT CONNECTION TOO. (connecting directly after being connected to the home network), i have to test if it happens after a power cycle without ever connecting to the home network.
+
 Findings:
 1. High dimmer input, 8 segments: Flashes appear across the whole length of the strip
 2. High dimmer input, 144 segments: Flashes seem to be more concentrated at the beginning of the strip, suggesting a DMX problem in the first few adresses, but sometiimes it flashes more towards the middle of the strip
