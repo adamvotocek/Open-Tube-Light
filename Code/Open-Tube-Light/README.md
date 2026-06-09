@@ -1,4 +1,4 @@
-# OpenTubeLight - Code Documentation
+# OpenTubeLight 
 
 ## BUGS:
 
@@ -21,33 +21,50 @@ Device's network settings:
 
 - The laptop's network settings are the same as above
 
-
 ### DMX input periodic glitches
-- need to text more
+- needs more info
 
-### Random light glitches, when connected to home network
-- artnet input. 
-- doesnt happen when connecting directly with a laptop, only on the home network
 
-this shit seems to happen with a firmware version before DMX512 was even implemented, so the issue is long. However, double check this, I am not sure if I remember correctly.
+## Solved bugs:
 
-UPDATE: THIS HAPPENS ON A DIRECT CONNECTION TOO. (connecting directly after being connected to the home network), i have to test if it happens after a power cycle without ever connecting to the home network.
+### Random flashes on the beginning of the strip - SOLVED
 
-Findings:
-1. High dimmer input, 8 segments: Flashes appear across the whole length of the strip
-2. High dimmer input, 144 segments: Flashes seem to be more concentrated at the beginning of the strip, suggesting a DMX problem in the first few adresses, but sometiimes it flashes more towards the middle of the strip
-3. Low dimmer input, changes with color, 8 segments: when sending a dark blue sine wave from light key at around 1 percent master dimmer, there are some dim green flashes in the first few LEDs of the strip. They don't span across one whole segment, which is weird as it indicates a problem with how the LED strip is driven?
- - actually, this happens with high dimmer also.
+I am testing the device's Art-Net input. It is connected to my home network and gets its address via DHCP. The device is set to 8 segments while testing, but problems also happen with 144 segments.
 
-All of this seems to be color dependent for some reason. 
+I am debugging it and monitoring 3 global variables: ```render_count```, ```failsafe_count```, and ```refresh_count```.
 
-8seg: When sending from qlc and freezing the universe output at a blueish colors, the flashes happen frequently. With red, green only, no problems. When sending zeroes, no problems. 
+1. When I upload the code, start debugging and wait for the device to connect to the network without sending any data to it:
+    - The led strip stays off, as expected
+    - ```render_count``` and ```failsafe_count``` stay at 0
+    - ```refresh_count``` increments, which indicates that the LED  strip is being refreshed to stay dark
+    - This is all expected and good
 
-8seg: When controlling from simple desk in qlc: when setting all 8 blues to full and dimming the red or green colors, the flashes begin to happen. Not with blue only, not with red or green only. Also, some are full segment, some are just an led at the beginning. Also, in simple desk, it seems like only the few segment affects things, not all.
+2. When I launch QLC+, it starts sending Art-Net data to the device, which is just currently just a universe full of zeroes. This is where the problems begin.
+    - Monitoring the Art-Net data in Wireshark, I can see that all the channels are at zero, as expected
+    - Even though the whole LED strip should be off, the first LED of the strip flashes with a blue color. The flashes are at seemingly random intervals, but they are not fast. One flash happens approximately once per second and it is not a single frame, the LED stays on for a random amount of time, which I approximate at around 300 milliseconds.
+    - ```render_count``` increments when QLC+ refreshes the Art-Net data, approximately once per 2 seconds, which is expected.
+    - ```failsafe_count``` is at 0, which is expected
+    - ```refresh_count``` increments faster than ```render_count```. That indicates that the LED strip is being refreshed between the packets, which is expected
+    - If I pause the debuggging while the LED is on with a blue color and monitor the output spi buffers ```spi_buf_a``` and ```spi_buf_b```, I can see that the data in the buffers is correct. Both of the buffers have the correct start frame, led frames with a 255 brightness byte and zeroes for the color bytes, and the correct end frame.
+       - That might indicate that the problem is not with the data in the buffers. Or it could be that the DMA somehow sends a different buffer, or at least different data than what I see? I don't know.
 
-144seg: Actually, it seems that it is not color dependent. Simple desk changing first red, green, blue gives flashes.
+3. If I start a random color effect on all the pixels in QLC+, the flashes get different. 
+    - The flashes are not just blue, but a random color combination. The flashes also seem to be more frequent. Sometimes only the first LED flashes, sometimes the first few LEDs flash, and sometimes the flashes happen for a whole segments, or multiple segments.
+    - it seems like either only a few first LEDs flash, or a few whole segments (at the beginning of the strip). The flashing of the segments indicates a compute error, however, despite multiple attempts, I have not been able to find the flashes in the spi buffers. The buffers seem to contain correct data, even when I stop the debugging when the glitch is displaying on the strip. 
+    - ```render_count``` increments rapidly now, as QLC+ sends approximately 30 frames per second
+    - ```failsafe_count``` is still at 0
+    - ```refresh_count``` doesn't change
+    - Wireshark data is correct 
+    - if I stop the effect in QLC+, the behavior goes back to the one described in point 2
 
-I didn't see the flashes in wireshark dmx data.
+4. If I disconnect the ethernet cable, the failsafe behavior happens, which is that the device holds the last state. 
+    - No more flashes happen.
+    - ```render_count``` doesn't increment
+    - ```failsafe_count``` increases by 1
+    - ```refresh_count``` increments
+    - all expected behavior 
+
+#### This issue was solved by adding 100 Ω series resistors to the SPI data lines
 
 
 ## Very unorganized TODO LIST:
