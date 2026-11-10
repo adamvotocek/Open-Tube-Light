@@ -9,7 +9,7 @@
  * These definitions are separate from the implementation to maintain
  * clear separation of concerns and improve portability.
  * 
- * @see artnetSpecification.md for complete protocol documentation
+ * @see docs/reference/Art-Net_4.md (Art-Net 4 spec, local only)
  */
 
 #ifndef INC_ARTNET_PROTOCOL_H_
