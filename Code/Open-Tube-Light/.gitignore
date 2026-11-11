@@ -1,16 +1,14 @@
 # ── CMake build output ────────────────────────────────────────────────
 build/
 
-# ── Legacy STM32CubeIDE Makefile build (safe to delete entirely) ─────
-Debug/
-Release/
-
-# ── Eclipse / STM32CubeIDE metadata (no longer primary with CMake) ───
+# ── Tool metadata ─────────────────────────────────────────────────────
+# .settings/ holds the STM32Cube VS Code extension's toolchain bundle info;
+# .mxproject is rewritten by CubeMX on every generate (.ioc is the source of truth).
+# .project/.cproject are STM32CubeIDE files, kept ignored in case CubeIDE is reopened.
 .settings/
-.metadata/
-.cproject
-.project
 .mxproject
+.project
+.cproject
 
 # ── Docs kept local: copyrighted specs/manuals and working drafts ────
 # Third-party specs and datasheets (copyrighted — never commit)
