@@ -71,7 +71,7 @@ D-Cache is enabled. DMA cannot access DTCM (`0x20000000`). All DMA buffers **mus
   * Types: `Module_PascalCase_t` (e.g., `DeviceConfig_Patch_t`).
   * Variables: `snake_case` (e.g., `hdma_spi1_tx`).
   * Constants/Macros: `UPPER_SNAKE_CASE`.
-* **File Layout:** Public headers in `Core/Inc/<Module>/x.h`, source in `Core/Src/<Module>/x.c`, private shared headers in `*_internal.h` (single-file modules like `device_config`, `dmx_input`, `pixel_render` sit directly in `Core/Src` / `Core/Inc`). Private functions are `static`: prototypes at the top of the file, definitions at the bottom, each under a `Private Functions` banner comment.
+* **File Layout:** Public headers in `Core/Inc/<Module>/x.h`, source in `Core/Src/<Module>/x.c`, private shared headers in `*_internal.h` (every module, including single-file ones like `device_config`, `dmx_input`, `pixel_render`, gets its own subfolder). Private functions are `static`: prototypes at the top of the file, definitions at the bottom, each under a `Private Functions` banner comment.
 * **Safety & Scope:** Validate pointers and packet lengths at public/network boundaries. Return `0`/`-1` or `HAL_StatusTypeDef` consistently. Keep functions under ~100 lines with a single responsibility; don't invent premature abstractions.
 * **Comments:** Explain what and *why* (timing constraints, MPU/DMA rules, spec citations). Use Doxygen `@brief` on public APIs.
 
