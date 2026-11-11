@@ -12,9 +12,12 @@ Release/
 .project
 .mxproject
 
-# ── Reference PDFs (large binaries, not source) ─────────────────────
-*.pdf
+# ── Docs kept local: copyrighted specs/manuals and working drafts ────
+# Third-party specs and datasheets (copyrighted — never commit)
+docs/reference/
+# AI-assisted design drafts
+docs/plans/
 
-# ── OS / editor junk ────────────────────────────────────────────────
-Thumbs.db
-.DS_Store
+# ── Per-machine tooling ───────────────────────────────────────────────
+Open-Tube-Light.code-workspace
+.claude/settings.local.json

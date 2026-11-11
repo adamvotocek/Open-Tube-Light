@@ -10,3 +10,8 @@
 *.png binary
 *.jpg binary
 *.ico binary
+*.zip binary
+*.pdf binary
+# CAD models: large, text-like, must not be line-ending normalized
+*.step binary
+*.stp binary

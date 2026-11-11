@@ -36,3 +36,11 @@ fp-info-cache
 # Backup
 
 */*-backups/
+
+# Missing from the list above
+*.kicad_sch-bak
+
+*.lck
+
+# Fabrication-toolkit output backups (release packages go in releases/)
+**/production/backups/

@@ -1,8 +1,8 @@
-# ── Firmware docs: private / copyrighted ──────────────────────────────
-# Third-party specs and datasheets (copyrighted — never commit)
-Code/Open-Tube-Light/docs/reference/
-# Working plans (AI-assisted drafts, kept local)
-Code/Open-Tube-Light/docs/plans/
+# Repo-wide ignores. Subfolders have their own .gitignore:
+#   Code/Open-Tube-Light/.gitignore  (firmware)
+#   PCB/.gitignore                   (KiCad)
 
-# ── Local tooling ─────────────────────────────────────────────────────
-Code/Open-Tube-Light/Open-Tube-Light.code-workspace
+# ── OS / editor junk ──────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
