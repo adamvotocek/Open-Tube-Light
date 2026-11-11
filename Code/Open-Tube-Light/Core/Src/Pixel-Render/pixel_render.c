@@ -7,9 +7,9 @@
  * stays a pure state-machine with no hardware or protocol details.
  */
 
-#include "pixel_render.h"
-#include "dmx_input.h"
-#include "device_config.h"
+#include "Pixel-Render/pixel_render.h"
+#include "DMX-Input/dmx_input.h"
+#include "Device-Config/device_config.h"
 #include <stddef.h>
 
 /* ========================== Private State ========================== */

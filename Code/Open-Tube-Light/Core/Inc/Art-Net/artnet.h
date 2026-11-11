@@ -14,7 +14,7 @@
 #define INC_ARTNET_H_
 
 #include "artnet_protocol.h"
-#include "device_config.h"
+#include "Device-Config/device_config.h"
 #include "cmsis_os.h"
 #include "lwip/ip_addr.h"
 #include <stdint.h>

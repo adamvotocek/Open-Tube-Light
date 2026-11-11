@@ -25,9 +25,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "SK9822/sk9822.h"
-#include "pixel_render.h"
-#include "device_config.h"
-#include "dmx_input.h"
+#include "Pixel-Render/pixel_render.h"
+#include "Device-Config/device_config.h"
+#include "DMX-Input/dmx_input.h"
 #include "stm32h7xx_hal_gpio.h"
 #include "stm32h7xx_hal_uart.h"
 #include "OLED/ssd1306.h"

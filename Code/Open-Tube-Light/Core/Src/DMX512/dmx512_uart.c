@@ -25,8 +25,8 @@
  */
 
 #include "DMX512/dmx512_uart.h"
-#include "dmx_input.h"
-#include "device_config.h"
+#include "DMX-Input/dmx_input.h"
+#include "Device-Config/device_config.h"
 #include "cmsis_os2.h"
 #include <stdint.h>
 #include <string.h>

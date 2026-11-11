@@ -13,7 +13,7 @@
  */
 
 #include "Art-Net/artnet_internal.h"
-#include "dmx_input.h"
+#include "DMX-Input/dmx_input.h"
 #include "main.h"
 #include "lwip/udp.h"
 #include "lwip/tcpip.h"

@@ -14,7 +14,7 @@
 #ifndef INC_DMX_INPUT_H_
 #define INC_DMX_INPUT_H_
 
-#include "device_config.h"
+#include "Device-Config/device_config.h"
 #include "cmsis_os.h"
 #include <stdint.h>
 

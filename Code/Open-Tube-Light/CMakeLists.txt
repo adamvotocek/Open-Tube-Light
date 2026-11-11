@@ -45,9 +45,9 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # User application sources (not managed by CubeMX)
-    Core/Src/device_config.c
-    Core/Src/dmx_input.c
-    Core/Src/pixel_render.c
+    Core/Src/Device-Config/device_config.c
+    Core/Src/DMX-Input/dmx_input.c
+    Core/Src/Pixel-Render/pixel_render.c
     Core/Src/SK9822/sk9822.c
     Core/Src/Art-Net/artnet.c
     Core/Src/Art-Net/artnet_handlers.c

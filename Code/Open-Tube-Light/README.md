@@ -40,11 +40,11 @@ Startup: `main()` sets up MPU, caches, clocks and peripherals → `device_config
 | Module | Role |
 |---|---|
 | `Core/Src/main.c` | Startup, task bodies, OLED status, HAL callbacks |
-| `Core/Src/device_config.c` | Config model, defaults, validation, atomic patch/commit |
-| `Core/Src/dmx_input.c` | Protocol-independent input manager — [docs/dmx-input-drivers.md](docs/dmx-input-drivers.md) |
+| `Core/Src/Device-Config/device_config.c` | Config model, defaults, validation, atomic patch/commit |
+| `Core/Src/DMX-Input/dmx_input.c` | Protocol-independent input manager — [docs/dmx-input-drivers.md](docs/dmx-input-drivers.md) |
 | `Core/Src/Art-Net/` | UDP receive, packet handlers, ArtPollReply |
 | `Core/Src/DMX512/dmx512_uart.c` | DMX512 receiver |
-| `Core/Src/pixel_render.c` | DMX → segment → LED mapping, failsafe |
+| `Core/Src/Pixel-Render/pixel_render.c` | DMX → segment → LED mapping, failsafe |
 | `Core/Src/SK9822/sk9822.c` | LED strip driver |
 | `Core/Src/OLED/ssd1306.c` | OLED driver (async I2C DMA) |
 

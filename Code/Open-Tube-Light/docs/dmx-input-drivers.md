@@ -103,9 +103,9 @@ osThreadFlagsSet(notify_task, 0x01);  // frame ready
 
 ### 4. Register the driver
 
-- `Core/Inc/dmx_input.h` — `extern const DMX_Input_Driver_t dmx_input_yourproto;`
-- `Core/Src/dmx_input.c` — add `case DMX_INPUT_YOURPROTO: return &dmx_input_yourproto;` in `DMX_Input_ResolveDriver()`
-- `Core/Inc/device_config.h` — `DMX_INPUT_SACN` already exists; for anything else append to `DeviceConfig_DmxInput_t` and extend validation in `device_config.c`.
+- `Core/Inc/DMX-Input/dmx_input.h` — `extern const DMX_Input_Driver_t dmx_input_yourproto;`
+- `Core/Src/DMX-Input/dmx_input.c` — add `case DMX_INPUT_YOURPROTO: return &dmx_input_yourproto;` in `DMX_Input_ResolveDriver()`
+- `Core/Inc/Device-Config/device_config.h` — `DMX_INPUT_SACN` already exists; for anything else append to `DeviceConfig_DmxInput_t` and extend validation in `device_config.c`.
 
 ### 5. Add to the build
 

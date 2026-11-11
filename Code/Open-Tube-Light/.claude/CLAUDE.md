@@ -35,11 +35,11 @@ DMX512 (UART5 ISR + DMA) ────┘
 ```
 
 * `Core/Src/main.c`: Startup, `ControlTaskRun`, `EffectTaskRun`, OLED status, HAL callbacks.
-* `Core/Src/device_config.c/.h`: Config schema, defaults, validation, atomic patch/commit (`DeviceConfig_ApplyPatch`).
-* `Core/Src/dmx_input.c/.h`: Protocol-agnostic input manager (`DMX_Input_Driver_t` vtable).
+* `Core/Src/Device-Config/device_config.c/.h`: Config schema, defaults, validation, atomic patch/commit (`DeviceConfig_ApplyPatch`).
+* `Core/Src/DMX-Input/dmx_input.c/.h`: Protocol-agnostic input manager (`DMX_Input_Driver_t` vtable).
 * `Core/Src/Art-Net/`: `artnet.c` (UDP/init), `artnet_handlers.c`, `artnet_pollreply.c`, `artnet_internal.h` (`g_artnet_ctx`).
 * `Core/Src/DMX512/dmx512_uart.c`: Break via framing error, EoP via IDLE, lock-free double buffer.
-* `Core/Src/pixel_render.c`: DMX -> segment -> LED mapping, failsafe, idle refresh.
+* `Core/Src/Pixel-Render/pixel_render.c`: DMX -> segment -> LED mapping, failsafe, idle refresh.
 * `Core/Src/SK9822/sk9822.c`: Ping-pong SPI DMA driver (`BeginFrame` / `SetLed` / `EndFrame` / `Refresh`).
 * `Core/Src/OLED/ssd1306.c`: RTOS-aware async I2C DMA driver.
 

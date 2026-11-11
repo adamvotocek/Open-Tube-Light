@@ -13,7 +13,7 @@
 
 #include "artnet.h"
 #include "artnet_protocol.h"
-#include "device_config.h"
+#include "Device-Config/device_config.h"
 #include "lwip/udp.h"
 #include "lwip/ip_addr.h"
 #include "cmsis_os.h"

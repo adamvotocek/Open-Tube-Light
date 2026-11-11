@@ -7,7 +7,7 @@
  * protocols (deinit old, init new).
  */
 
-#include "dmx_input.h"
+#include "DMX-Input/dmx_input.h"
 #include <stddef.h>
 
 /* ========================== Private State ========================== */

@@ -23,7 +23,7 @@
  * This allows dynamic reconfiguration without polling or restart.
  */
 
-#include "device_config.h"
+#include "Device-Config/device_config.h"
 #include "Art-Net/artnet_protocol.h"
 #include "main.h"
 #include <stddef.h>
