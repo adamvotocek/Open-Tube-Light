@@ -17,5 +17,4 @@ docs/reference/
 docs/plans/
 
 # ── Per-machine tooling ───────────────────────────────────────────────
-Open-Tube-Light.code-workspace
 .claude/settings.local.json
