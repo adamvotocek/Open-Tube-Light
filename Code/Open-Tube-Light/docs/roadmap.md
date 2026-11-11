@@ -16,7 +16,7 @@ Settings must be editable at runtime and take effect without a reboot:
 - Device name — short name (Art-Net, 18 B) and long name (Art-Net, 64 B)
 - IP — DHCP / static; address and mask when static
 - Strip layout — pixel count, segment count, segment format
-- DMX — input source (Art-Net / DMX512), start address, Art-Net start universe. Channel count follows from the layout; universe count from channel count + start address.
+- DMX — input source (Art-Net / DMX512 / sACN), start address, start universe. Channel count follows from the layout; universe count from channel count + start address.
 - Failsafe — hold / zero / full
 
 Switching input source should commit through `device_config` and restart the active driver via the `dmx_input` abstraction.
