@@ -17,7 +17,7 @@ cube-cmake --build --preset Debug  # Build -> build/Debug/Open-Tube-Light.elf
 * **Verification Criteria:** There are no unit tests. A valid change must:
   1. Build cleanly with zero *new* compiler warnings (baseline: one existing `-Wunused-function` for `Config_ValidateFlash`).
   2. Fit within the linker memory-region table printed at build end (`RAM_D1_LWIP` is ~98% full by design).
-* **Hardware Testing:** Flashing/debugging is done by the user via ST-Link. When a change requires bench verification, explicitly state what to test and which Live Watch counters to monitor (`render_count`/`failsafe_count`/`refresh_count` in `pixel_render.c`; `receivedData`/`smallFrameCnt`/`midPcktErrCnt` in `dmx512_uart.c`).
+* **Hardware Testing:** Flashing/debugging is done by the user via ST-Link. When a change requires bench verification, explicitly state what to test and which Live Watch counters to monitor (`render_count`/`failsafe_count`/`refresh_count` in `pixel_render.c`; `receivedData`/`smallFrameCnt`/`midPcktErrCnt` in `dmx512_uart.c`; `stack_monitor_report` (per-task min free stack, heap low-water mark) and `stack_monitor_overflow` in `stack_monitor.c`).
 
 ## CubeMX & Linker Boundaries
 
@@ -42,6 +42,8 @@ DMX512 (UART5 ISR + DMA) ────┘
 * `Core/Src/Pixel-Render/pixel_render.c`: DMX -> segment -> LED mapping, failsafe, idle refresh.
 * `Core/Src/SK9822/sk9822.c`: Ping-pong SPI DMA driver (`BeginFrame` / `SetLed` / `EndFrame` / `Refresh`).
 * `Core/Src/OLED/ssd1306.c`: RTOS-aware async I2C DMA driver.
+* `Core/Src/Stack-Monitor/stack_monitor.c`: Stack/heap high-water marks (updated 1 Hz by `ControlTask`) and the stack overflow record.
+* Product identity (firmware version, HW revision, OEM/ESTA codes) is `#define`d in `device_config.h`, not stored in `DeviceConfig_t` — it must never be persisted or runtime-editable. Per-unit identity (MAC) is derived from the MCU UID (`DeviceConfig_GetMacAddress`).
 
 ## Execution Contexts & Threading Rules
 
@@ -73,6 +75,7 @@ D-Cache is enabled. DMA cannot access DTCM (`0x20000000`). All DMA buffers **mus
   * Constants/Macros: `UPPER_SNAKE_CASE`.
 * **File Layout:** Public headers in `Core/Inc/<Module>/x.h`, source in `Core/Src/<Module>/x.c`, private shared headers in `*_internal.h` (every module, including single-file ones like `device_config`, `dmx_input`, `pixel_render`, gets its own subfolder). Private functions are `static`: prototypes at the top of the file, definitions at the bottom, each under a `Private Functions` banner comment.
 * **Safety & Scope:** Validate pointers and packet lengths at public/network boundaries. Return `0`/`-1` or `HAL_StatusTypeDef` consistently. Keep functions under ~100 lines with a single responsibility; don't invent premature abstractions.
+* **Cleanest option first:** Before writing code, decide who *owns* it: the single consumer, or the module whose stated purpose matches. "Related by analogy" doesn't count. For non-trivial changes, state the chosen placement and the best rejected alternative in one line before implementing.
 * **Comments:** Explain what and *why* (timing constraints, MPU/DMA rules, spec citations). Use Doxygen `@brief` on public APIs.
 
 ## Docs, Specs & Project State

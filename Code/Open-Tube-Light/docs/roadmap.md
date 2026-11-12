@@ -28,21 +28,26 @@ Switching input source should commit through `device_config` and restart the act
 - [ ] **Class A (2.x.x.x) / link-local IP fallback** when no DHCP server answers, per Art-Net spec.
 - [ ] **BindIndex** for layouts needing more than 4 universes (currently always `bind_index = 1`).
 - [ ] **ArtPoll flags** — send ArtPollReply on change, diagnostics (ArtDiagData).
-- [ ] **ArtPollReply** — firmware version from a build/version header (hard-coded 0.1), Status1 indicator / Port-Address-authority bits.
+- [ ] **ArtPollReply** — Status1 indicator / Port-Address-authority bits.
 - [ ] **Art-Net control plane while in DMX512 mode** — today Art-Net (discovery, ArtCommand) only runs when it is the input source.
 
 ## Input & rendering
 
 - [ ] **sACN (E1.31) input driver** — `DMX_INPUT_SACN` exists in config, no driver. See `dmx-input-drivers.md`.
 - [ ] **RGBW and RGB16 rendering** — accepted by config, rendered as RGB only (`pixel_render.c`).
-- [ ] **288-pixel hardware** variant.
+- [ ] **288-pixel hardware** variant. Plan: move `DEVICE_CONFIG_HW_REVISION` / `DEVICE_CONFIG_MAX_PIXELS` into CMake build presets (one per hardware variant).
 
 ## Robustness
 
-- [ ] Real `vApplicationStackOverflowHook` (currently an empty loop) and stack watermark reporting.
-- [ ] Remove `snprintf` from the ArtPollReply path in `tcpip_thread`; re-budget task stacks. → `plans/memory-tuning.md`
+- [ ] Re-budget task stacks and FreeRTOS heap from measured `stack_monitor_report` values (bench, under Art-Net load + ArtPoll/ArtCommand traffic); `tcpip_thread` (2048 B) is the first candidate to shrink. → `plans/memory-tuning.md`
+- [ ] Move ArtCommand parsing / config apply out of `tcpip_thread` (comes with serialized config commits).
 
 ## Done
+
+- [x] Stack overflow hook records the task (`stack_monitor_overflow`) and halts at a breakpoint; per-task stack + heap high-water marks in `stack_monitor_report` (1 Hz) — watermarks bench-verified (all tasks have safe headroom); overflow halt not yet triggered on purpose
+- [x] `snprintf` removed from the ArtPollReply path in `tcpip_thread` (bounded NodeReport formatter, output byte-identical)
+- [x] Product identity constants (firmware version, HW revision, manufacturer, OEM/ESTA codes) in `device_config.h`; ArtPollReply uses them
+- [x] Per-unit MAC address derived from the MCU unique ID (was `00:80:E1:00:00:00` on every unit) — *not yet bench-verified*
 
 - [x] Idle refresh of the LED strip (every 150 ms) to wipe interference artifacts
 - [x] ArtPollReply NodeReport status reporting (custom format)

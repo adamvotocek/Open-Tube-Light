@@ -34,14 +34,6 @@ Bug log for hardware-observed problems. Newest open issues first; move entries t
 
 **Next step.** Logic analyzer on the DMX line to decide whether the tearing is already in the transmitted signal (Lightkey/node rendering) or introduced by the receiver.
 
-### Network: not reachable on a direct laptop connection after reset — likely fixed, verify
-
-**Symptom (with DHCP enabled).** Works on the home network. If moved to a direct cable to the laptop while running, it keeps working; after a reset on the direct link, it is not discoverable. Laptop: static 192.168.1.2/24, router 192.168.1.3.
-
-**Likely cause.** DHCP with no DHCP server on the direct link — the node never got an address after reset; it only worked when it kept the lease from the home network.
-
-**Status.** Firmware now uses a static IP (`192.168.1.179/24`, `LWIP_DHCP=0`). Verify a direct connection after a cold reset, then move to *Solved*. Long-term fix: DHCP with fallback to Art-Net 2.x.x.x / link-local (see roadmap).
-
 ## Accepted / by design
 
 ### DMX512 ISR does memcpy/memset above BASEPRI
@@ -49,6 +41,12 @@ Bug log for hardware-observed problems. Newest open issues first; move entries t
 `DMX512_Uart_ProcessPacket()` runs from the UART5 ISR at priority 3, above `configMAX_SYSCALL_INTERRUPT_PRIORITY` (5), so it blocks every FreeRTOS-aware interrupt while it runs. Worst case is a 512-byte `memcpy` plus a 512-byte `memset` in DTCM — a few µs at 500 MHz. Acceptable today; re-evaluate if more above-BASEPRI interrupts are added.
 
 ## Solved
+
+### Network: not reachable on a direct laptop connection after reset
+
+**Symptom (with DHCP enabled).** Works on the home network. If moved to a direct cable to the laptop while running, it keeps working; after a reset on the direct link, it is not discoverable. Laptop: static 192.168.1.2/24, router 192.168.1.3.
+
+**Fix.** Firmware uses a static IP (`192.168.1.179/24`, `LWIP_DHCP=0`); a direct connection after a cold reset works on the bench. The remaining unreachability was caused by the laptop's network setup, not the firmware. DHCP with fallback to Art-Net 2.x.x.x / link-local stays on the roadmap.
 
 ### Random flashes at the start of the strip
 

@@ -24,7 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "Stack-Monitor/stack_monitor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,12 +58,10 @@ void vApplicationStackOverflowHook(xTaskHandle xTask, char *pcTaskName);
 /* USER CODE BEGIN 4 */
 void vApplicationStackOverflowHook(xTaskHandle xTask, char *pcTaskName)
 {
-   /* Run time stack overflow checking is performed if
-   configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2. This hook function is
-   called if a stack overflow is detected. */
-    while(1) {
-        // Stay here to indicate error
-    }
+   /* Called by the kernel (configCHECK_FOR_STACK_OVERFLOW = 2) during a context
+   switch when a task's stack canary is damaged. Records the task identity in
+   stack_monitor_overflow and halts; see stack_monitor.h. */
+    StackMonitor_OnOverflow(xTask, pcTaskName);
 }
 /* USER CODE END 4 */
 

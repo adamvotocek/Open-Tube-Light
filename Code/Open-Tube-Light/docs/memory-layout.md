@@ -100,6 +100,7 @@ Changes against the CubeMX default:
 - RX buffers @ `0x24008000`, length 1536
 - ETH global interrupt enabled
 - All ETH GPIO at *Very High* speed
+- MAC address: the CubeMX value (`00:80:E1:00:00:00`) is overridden in `ethernetif.c` `USER CODE MACADDRESS` with a per-unit address from `DeviceConfig_GetMacAddress()` (MCU UID hash, `02:xx:xx:xx:xx:xx`)
 
 ## LwIP (CubeMX → LWIP)
 
@@ -112,7 +113,7 @@ Changes against the CubeMX default:
 | `PBUF_POOL_SIZE` | 24 | |
 | `PBUF_POOL_BUFSIZE` | 1536 | |
 | `MEMP_NUM_UDP_PCB` | 10 | |
-| `TCPIP_THREAD_STACKSIZE` | 2048 | Raised from 1024 after a stack overflow |
+| `TCPIP_THREAD_STACKSIZE` | 2048 | Bytes (passed to `osThreadNew` `stack_size`). Raised from 1024 after a stack overflow; CubeMX incorrectly reports the value in Words |
 | `IP_REASSEMBLY` | 0 | Large ICMP (1500 B ping) caused issues with reassembly enabled |
 | `IP_FRAG` | 1 | |
 | `CHECKSUM_BY_HARDWARE` | 1 | |

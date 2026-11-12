@@ -33,7 +33,7 @@
 
 /* Within 'USER CODE' section, code will be kept by default at each generation */
 /* USER CODE BEGIN 0 */
-
+#include "Device-Config/device_config.h"
 /* USER CODE END 0 */
 
 /* Private define ------------------------------------------------------------*/
@@ -232,7 +232,9 @@ static void low_level_init(struct netif *netif)
   heth.Init.RxBuffLen = 1536;
 
   /* USER CODE BEGIN MACADDRESS */
-
+  /* Replace the CubeMX MAC (identical on every unit) with a per-unit address
+     derived from the MCU unique ID. netif->hwaddr is copied from this below. */
+  (void)DeviceConfig_GetMacAddress(MACAddr);
   /* USER CODE END MACADDRESS */
 
   hal_eth_init_status = HAL_ETH_Init(&heth);

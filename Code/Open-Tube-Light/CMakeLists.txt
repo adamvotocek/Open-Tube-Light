@@ -55,6 +55,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/DMX512/dmx512_uart.c
     Core/Src/OLED/ssd1306.c
     Core/Src/OLED/ssd1306_fonts.c
+    Core/Src/Stack-Monitor/stack_monitor.c
 )
 
 # Add include paths

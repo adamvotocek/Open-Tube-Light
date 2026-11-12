@@ -32,6 +32,7 @@
 #include "stm32h7xx_hal_uart.h"
 #include "OLED/ssd1306.h"
 #include "OLED/ssd1306_fonts.h"
+#include "Stack-Monitor/stack_monitor.h"
 
 // Included for OLED status page
 #include <stdio.h>
@@ -658,6 +659,8 @@ void ControlTaskRun(void *argument)
   /* Infinite loop */
   for(;;)
   {
+    // 1 Hz stack/heap high-water marks for Live Watch (stack_monitor_report).
+    StackMonitor_Update();
     OledStatus_RunStep();
     osDelay(OLED_STATUS_UPDATE_PERIOD_MS);
   }

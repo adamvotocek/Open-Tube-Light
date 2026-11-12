@@ -53,6 +53,34 @@ extern "C" {
 /** @brief Magic number to validate flash config integrity */
 #define DEVICE_CONFIG_MAGIC             0xA1B2C3D4
 
+/* ========================== Product Identity ========================== */
+/*
+ * Fixed per firmware build: deliberately NOT part of DeviceConfig_t, so they are
+ * never persisted (a stored copy would outlive a firmware update) and never
+ * editable at runtime. Per-unit identity (MAC) is derived from the MCU unique
+ * ID instead, see DeviceConfig_GetMacAddress().
+ */
+
+/** @brief Firmware version major, ArtPollReply VersInfoH (0–255) */
+#define DEVICE_CONFIG_FW_VERSION_MAJOR  0
+/** @brief Firmware version minor, ArtPollReply VersInfoL (0–255); bump for every flashed release */
+#define DEVICE_CONFIG_FW_VERSION_MINOR  1
+
+/** @brief PCB hardware revision this firmware is built for */
+#define DEVICE_CONFIG_HW_REVISION       1
+
+/** @brief Manufacturer name */
+#define DEVICE_CONFIG_MANUFACTURER      "Open Tube Light"
+
+/** @brief Art-Net OEM code (ArtPollReply Oem); 0xFFFF = prototype, not registered with Artistic Licence */
+#define DEVICE_CONFIG_ARTNET_OEM_CODE   0xFFFFU
+
+/** @brief ESTA manufacturer code (ArtPollReply EstaMan); 0x0000 = not assigned */
+#define DEVICE_CONFIG_ESTA_MAN_CODE     0x0000U
+
+/** @brief Ethernet MAC address length */
+#define DEVICE_CONFIG_MAC_LEN           6
+
 /* ========================== Enumerations ========================== */
 
 /**
@@ -421,6 +449,19 @@ int DeviceConfig_SaveToFlash(void);
  * @note Maximum 4 callbacks can be registered
  */
 int DeviceConfig_RegisterCallback(DeviceConfig_ChangeCallback_t callback);
+
+/**
+ * @brief Get this unit's Ethernet MAC address
+ *
+ * Derived from the 96-bit MCU unique ID, so it is stable across reboots and
+ * firmware updates and differs between units. The first octet is 0x02
+ * (locally administered, unicast) because the project owns no IEEE OUI.
+ * Does not depend on DeviceConfig_Init() and is safe to call before it.
+ *
+ * @param mac_out Buffer of DEVICE_CONFIG_MAC_LEN bytes
+ * @return 0 on success, -1 if mac_out is NULL
+ */
+int DeviceConfig_GetMacAddress(uint8_t mac_out[DEVICE_CONFIG_MAC_LEN]);
 
 #ifdef __cplusplus
 }

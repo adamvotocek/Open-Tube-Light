@@ -49,7 +49,7 @@ static const DeviceConfig_t factory_defaults = {
     
     .identity = {
         .short_name = "OpenTubeLight",
-        .long_name = "OpenTubeLight V0.1",
+        .long_name = "OpenTubeLight", 
     },
     
     .network = {
@@ -358,6 +358,31 @@ int DeviceConfig_RegisterCallback(DeviceConfig_ChangeCallback_t callback)
     }
     
     callbacks[callback_count++] = callback;
+    return 0;
+}
+
+int DeviceConfig_GetMacAddress(uint8_t mac_out[DEVICE_CONFIG_MAC_LEN])
+{
+    if (mac_out == NULL) {
+        return -1;
+    }
+
+    // The 96-bit UID encodes wafer lot/number and die X/Y, so units differ in
+    // only a few bits. FNV-1a 64 spreads those differences over all 40 bits
+    // used below.
+    const uint32_t uid[3] = { HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2() };
+    uint64_t hash = 0xCBF29CE484222325ULL;  // FNV-1a 64 offset basis
+    for (uint32_t word = 0; word < 3U; word++) {
+        for (uint32_t shift = 0; shift < 32U; shift += 8U) {
+            hash ^= (uid[word] >> shift) & 0xFFU;
+            hash *= 0x100000001B3ULL;       // FNV-1a 64 prime
+        }
+    }
+
+    mac_out[0] = 0x02;  // Locally administered (bit 1), unicast (bit 0 clear)
+    for (uint32_t i = 1; i < DEVICE_CONFIG_MAC_LEN; i++) {
+        mac_out[i] = (uint8_t)(hash >> (8U * (i - 1U)));
+    }
     return 0;
 }
 

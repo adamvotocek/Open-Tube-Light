@@ -21,13 +21,35 @@
 #include "lwip/tcpip.h"
 #include "lwip/dhcp.h"
 #include "lwip/netif.h"
-#include <stdio.h>
 #include <string.h>
 
 /* ========================== External References ========================== */
 
 /** @brief Global network interface (from LwIP) */
 extern struct netif gnetif;
+
+/* ========================== Private Types ========================== */
+
+/**
+ * @brief Bounded text builder used instead of snprintf
+ *
+ * newlib's snprintf needs ~1 KB of stack and runs in tcpip_thread here; the
+ * NodeReport only needs strings and zero-padded hex/decimal numbers.
+ * Output is truncated (never overflowed) and always NUL-terminated.
+ */
+typedef struct {
+    char  *buf;   ///< Destination buffer
+    size_t size;  ///< Buffer capacity including the terminator
+    size_t len;   ///< Characters written so far
+} ArtNet_TextWriter_t;
+
+/* ========================== Private Function Prototypes ========================== */
+
+static void ArtNet_FormatNodeReport(char *out, size_t out_size, const DeviceConfig_t *config);
+static void ArtNet_TextAppendChar(ArtNet_TextWriter_t *w, char c);
+static void ArtNet_TextAppendStr(ArtNet_TextWriter_t *w, const char *s);
+static void ArtNet_TextAppendUnsigned(ArtNet_TextWriter_t *w, uint32_t value,
+                                      uint32_t base, uint8_t min_digits);
 
 /* ========================== Timer Callback ========================== */
 
@@ -203,9 +225,8 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     reply->port = ARTNET_PORT;
     
     // ===== FIRMWARE VERSION =====
-    // TODO: Get from build system or version header
-    reply->vers_hi = 0;
-    reply->vers_lo = 1;
+    reply->vers_hi = DEVICE_CONFIG_FW_VERSION_MAJOR;
+    reply->vers_lo = DEVICE_CONFIG_FW_VERSION_MINOR;
     
     // ===== PORT-ADDRESS (high bits) =====
     reply->net_switch = config->dmx.artnet_net & 0x7F;
@@ -216,24 +237,15 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     strncpy(reply->long_name, config->identity.long_name, 63);
     
     // ===== OEM & ESTA CODES =====
-    // 0xFFFF = prototype/development
-    reply->oem_hi = 0xFF;
-    reply->oem_lo = 0xFF;
-    // ESTA code not assigned
-    reply->esta_man_lo = 0x00;
-    reply->esta_man_hi = 0x00;
+    reply->oem_hi = (uint8_t)(DEVICE_CONFIG_ARTNET_OEM_CODE >> 8);
+    reply->oem_lo = (uint8_t)(DEVICE_CONFIG_ARTNET_OEM_CODE & 0xFFU);
+    reply->esta_man_lo = (uint8_t)(DEVICE_CONFIG_ESTA_MAN_CODE & 0xFFU);
+    reply->esta_man_hi = (uint8_t)(DEVICE_CONFIG_ESTA_MAN_CODE >> 8);
     
     // ===== NODE REPORT =====
     // Custom format: "#xxxx [yyyy] @aaa $ppp MODE=[mmm] zzzzz..."
     g_artnet_ctx.poll_reply_counter = (g_artnet_ctx.poll_reply_counter + 1) % 10000;
-    snprintf(reply->node_report, sizeof(reply->node_report),
-             "#%04x [%04u] @%03u $%03u MODE=[%s] %s",
-             g_artnet_ctx.node_report.code,
-             g_artnet_ctx.poll_reply_counter,
-             config->dmx.dmx_start_address,
-             config->layout.segment_count,
-             ArtNet_GetSegmentFormatName(config->layout.segment_format),
-             g_artnet_ctx.node_report.detail);
+    ArtNet_FormatNodeReport(reply->node_report, sizeof(reply->node_report), config);
     
     // ===== PORTS =====
     uint8_t num_ports = num_universes;
@@ -282,4 +294,96 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     // Send reply to the requesting controller
     udp_sendto(g_artnet_ctx.pcb, p, addr, port);
     pbuf_free(p);
+}
+
+/* ========================== Private Functions ========================== */
+
+/**
+ * @brief Build the custom NodeReport string
+ *
+ * Produces exactly what snprintf("#%04x [%04u] @%03u $%03u MODE=[%s] %s") did,
+ * since the companion app parses it (docs/artnet-custom-protocol.md).
+ */
+static void ArtNet_FormatNodeReport(char *out, size_t out_size, const DeviceConfig_t *config)
+{
+    if ((out == NULL) || (out_size == 0U)) {
+        return;
+    }
+
+    ArtNet_TextWriter_t w = { .buf = out, .size = out_size, .len = 0U };
+    out[0] = '\0';
+
+    ArtNet_TextAppendChar(&w, '#');
+    ArtNet_TextAppendUnsigned(&w, g_artnet_ctx.node_report.code, 16U, 4U);
+    ArtNet_TextAppendStr(&w, " [");
+    ArtNet_TextAppendUnsigned(&w, g_artnet_ctx.poll_reply_counter, 10U, 4U);
+    ArtNet_TextAppendStr(&w, "] @");
+    ArtNet_TextAppendUnsigned(&w, config->dmx.dmx_start_address, 10U, 3U);
+    ArtNet_TextAppendStr(&w, " $");
+    ArtNet_TextAppendUnsigned(&w, config->layout.segment_count, 10U, 3U);
+    ArtNet_TextAppendStr(&w, " MODE=[");
+    ArtNet_TextAppendStr(&w, ArtNet_GetSegmentFormatName(config->layout.segment_format));
+    ArtNet_TextAppendStr(&w, "] ");
+    ArtNet_TextAppendStr(&w, g_artnet_ctx.node_report.detail);
+}
+
+/**
+ * @brief Append one character if room remains, keeping the buffer terminated
+ */
+static void ArtNet_TextAppendChar(ArtNet_TextWriter_t *w, char c)
+{
+    if ((w->len + 1U) < w->size) {
+        w->buf[w->len] = c;
+        w->len++;
+        w->buf[w->len] = '\0';
+    }
+}
+
+/**
+ * @brief Append a NUL-terminated string (NULL appends nothing)
+ */
+static void ArtNet_TextAppendStr(ArtNet_TextWriter_t *w, const char *s)
+{
+    if (s == NULL) {
+        return;
+    }
+    while (*s != '\0') {
+        ArtNet_TextAppendChar(w, *s);
+        s++;
+    }
+}
+
+/**
+ * @brief Append an unsigned number, zero-padded to at least min_digits
+ *
+ * Like printf's %0Nu / %0Nx: wider values are printed in full, not cut.
+ *
+ * @param base 10 or 16 (lowercase hex digits)
+ */
+static void ArtNet_TextAppendUnsigned(ArtNet_TextWriter_t *w, uint32_t value,
+                                      uint32_t base, uint8_t min_digits)
+{
+    static const char digit_chars[] = "0123456789abcdef";
+    char digits[10];  // uint32_t needs at most 10 decimal digits
+    size_t count = 0U;
+
+    if ((base < 2U) || (base > 16U)) {
+        return;
+    }
+
+    do {
+        digits[count] = digit_chars[value % base];
+        count++;
+        value /= base;
+    } while ((value != 0U) && (count < sizeof(digits)));
+
+    while ((count < min_digits) && (count < sizeof(digits))) {
+        digits[count] = '0';
+        count++;
+    }
+
+    while (count > 0U) {
+        count--;
+        ArtNet_TextAppendChar(w, digits[count]);
+    }
 }
