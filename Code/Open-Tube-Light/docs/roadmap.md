@@ -23,6 +23,8 @@ Switching input source should commit through `device_config` and restart the act
 
 ## Art-Net
 
+Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`.
+
 - [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full; runtime-only. → `plans/device-config-refactor.md` § ArtAddress
 - [ ] **ArtTrigger locate (KeyWink)** — contract in `artnet-custom-protocol.md`.
 - [ ] **Class A (2.x.x.x) / link-local IP fallback** when no DHCP server answers, per Art-Net spec.
