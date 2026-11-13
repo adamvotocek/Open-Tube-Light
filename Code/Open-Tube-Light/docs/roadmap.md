@@ -6,7 +6,7 @@ What is still to be built. Detailed designs for larger items live in `docs/plans
 
 - [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Needs reserved flash sectors, CRC32, and safe handling of an interrupted save. → `plans/device-config-refactor.md` phase 4
 - [ ] **Factory reset** from the local UI.
-- [ ] **Serialized config commits** — only `ControlTask` should commit; Art-Net and UI submit requests. → `plans/device-config-refactor.md` phases 1–3
+- [ ] **Serialized config commits** — only `ControlTask` should commit; Art-Net and UI submit requests. → `plans/config-commits-and-artaddress.md` phases A–B
 - [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC (`DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE).
 
 ## Local UI (OLED + 4 buttons)
@@ -18,6 +18,14 @@ Settings must be editable at runtime and take effect without a reboot:
 - Strip layout — pixel count, segment count, segment format
 - DMX — input source (Art-Net / DMX512 / sACN), start address, start universe. Channel count follows from the layout; universe count from channel count + start address.
 - Failsafe — hold / zero / full
+- Display — timeout after which the OLED turns off (a button press wakes it)
+
+Menu system:
+- A full menu on the OLED replaces the 1 Hz status page and owns the display: on/off and the timeout. The OLED code moves out of `main.c` into its own module.
+- Edits go through the same config request path as Art-Net (`ConfigService_Submit()`, `plans/config-commits-and-artaddress.md`), so validation and persistence are shared.
+- Art-Net indicator integration via `Indicator_Get()`:
+  - Locate shows a flashing dot in one corner while the menu stays usable.
+  - `AcLedMute` forces the display off before the timeout, and Status1 reports mute (10). `AcLedNormal` returns to the normal timeout behaviour.
 
 Switching input source should commit through `device_config` and restart the active driver via the `dmx_input` abstraction.
 
@@ -25,8 +33,9 @@ Switching input source should commit through `device_config` and restart the act
 
 Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`.
 
-- [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full; runtime-only. → `plans/device-config-refactor.md` § ArtAddress
-- [ ] **ArtTrigger locate (KeyWink)** — contract in `artnet-custom-protocol.md`.
+- [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full, AcCancelMerge, AcClearOp0; runtime-only. → `plans/config-commits-and-artaddress.md` phase C
+- [ ] **Locate via ArtAddress `AcLedLocate`** — tube flashes white at 2 Hz until `AcLedNormal`. Replaces the dropped custom ArtTrigger KeyWink. The OLED corner dot and `AcLedMute` come with the menu system (Local UI). Contract in `artnet-custom-protocol.md`. → `plans/config-commits-and-artaddress.md` phase D
+- [ ] **RDM responder over Art-Net** (after flash persistence) — `DMX_START_ADDRESS`, `DMX_PERSONALITY` (segment count × mode), `IDENTIFY_DEVICE`, `DEVICE_LABEL`. Replaces OpenTubeDia's custom ArtCommand verbs and NodeReport fields; OpenTubeDia is then deprecated (it stays until then because Lightkey has no RDM). Later the same responder on the DMX512 line (UART5 has RS-485 DE). Design notes: `artnet-compliance.md` 11.12.
 - [ ] **2.x.y.z fallback when DHCP times out** — the 2.x.y.z address itself is the boot default already; needs DHCP first.
 - [ ] **BindIndex** for layouts needing more than 4 universes (currently always `bind_index = 1`).
 - [ ] **ArtPoll flags** — send ArtPollReply on change, diagnostics (ArtDiagData).

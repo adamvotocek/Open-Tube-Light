@@ -4,6 +4,8 @@ Project-specific extensions on top of Art-Net 4, used by the companion programmi
 
 All of it is only reachable while Art-Net is the active input source (`dmx.input_source == DMX_INPUT_ARTNET`). Changes made through it are runtime-only until config persistence exists.
 
+**Status: transitional.** OpenTubeDia is a proof of concept. Its custom parts (the NodeReport fields and the ArtCommand verbs) will be replaced by standard RDM over Art-Net (`DMX_START_ADDRESS`, `DMX_PERSONALITY`, `IDENTIFY_DEVICE`, read via `DEVICE_INFO`), after which they are deprecated together with OpenTubeDia. Until then they stay as they are, because Lightkey has no RDM support. Don't add new custom verbs; use standard Art-Net (ArtAddress) or plan them as RDM parameters. See `roadmap.md`.
+
 ## Reply port — implemented
 
 OpenTubeDia must be able to run next to lighting software on the same PC. Only one program can bind UDP 0x1936 (6454) on a NIC, so OpenTubeDia sends from an ephemeral port. The node therefore answers to **both** ports:
@@ -91,13 +93,29 @@ Mode=mmm...mmm&
 
 Only `RGB` is accepted today. `RGBW` and `RGB16` exist in the config enum but are not rendered and are rejected with `Mode Unsupported`.
 
-## ArtTrigger fixture locate — planned, not implemented
+## Locate — standard ArtAddress, planned
 
-`OpTrigger` is not dispatched yet. Intended behavior:
+Locate uses the standard ArtAddress `AcLedLocate` / `AcLedNormal` commands, not a custom packet. The earlier custom ArtTrigger KeyWink is dropped: with Oem 0xFFFF the spec marks Key 4 "Undefined", and ArtTrigger is not handled by this device.
 
-- `Key` = `0x04` (KeyWink)
-- `SubKey` = duration in seconds, 0–255
-- The fixture flashes white at full brightness at 2 Hz for that duration, then resumes normal rendering.
-- All other keys, and the standard Art-Net trigger key meanings, are ignored.
+To start locate, unicast an ArtAddress (0x6000) to the fixture with:
 
-Design notes: this is a transient output override, not a config change. Store a `locate_until_tick` and apply the effect from the render path (`EffectTask` / `pixel_render`), not from the UDP callback, so LED timing and DMA ownership stay in one place.
+| Field | Value | Why |
+|---|---|---|
+| BindIndex | 1 | Root device |
+| ShortName, LongName | all zero | Empty string = no change |
+| NetSwitch, SubSwitch, SwIn[0..3], SwOut[0..3] | `0x7F` | Bit 7 clear = no change. **Not `0x00`**, which means "reset to default". |
+| AcnPriority | 255 | No change |
+| Command | `0x04` AcLedLocate | `0x02` AcLedNormal ends it |
+
+Effect:
+- The tube flashes full white at 2 Hz until `AcLedNormal`. There is no timeout.
+- The node replies with an ArtPollReply. Status1 bits 7-6 report the state: `01` locate, `11` normal.
+- When locate ends, the tube shows current DMX data again, or the failsafe output if no data is arriving.
+
+Planned with the OLED menu system (roadmap, Local UI):
+- Locate also shows a flashing dot in one corner of the OLED, so the menu stays usable while locating.
+- `AcLedMute` (`0x03`) forces the display off before its normal timeout; the tube is not affected. Status1 then reports `10`. Until the menu exists, `AcLedMute` is ignored and Status1 never reports mute.
+
+The board LED is debug-only and not visible on this hardware revision, so it is not used. RDM `IDENTIFY_DEVICE` will drive the same locate state once RDM exists.
+
+Design and status: `plans/config-commits-and-artaddress.md` Phase D (local only). Implementation will be `Indicator_Set()` (state) and `Pixel_Render_Locate()` (tube); the menu system will read `Indicator_Get()`.

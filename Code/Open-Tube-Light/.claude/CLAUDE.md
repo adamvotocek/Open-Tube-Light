@@ -88,9 +88,9 @@ All documentation lives in `docs/` — never put `.md` files in `Core/` or other
   * `protocol-failsafes.md`, ST manuals (`UM2217` HAL/LL, `UM1713` LwIP) as PDFs.
 * **`docs/plans/`** (gitignored): design drafts. `device-config-refactor.md` (config ownership, persistence, ArtAddress), `memory-tuning.md` (stacks, `snprintf` in `tcpip_thread`).
 * **Tracked docs:**
-  * `docs/artnet-custom-protocol.md`: contract with the companion app (NodeReport format, `ArtCommand` verbs, ArtTrigger locate). Change it together with the firmware.
+  * `docs/artnet-custom-protocol.md`: contract with the companion app OpenTubeDia (NodeReport format, `ArtCommand` verbs, locate via ArtAddress). Transitional. Change it together with the firmware.
   * `docs/dmx-input-drivers.md`: input driver vtable and how to add a protocol.
   * `docs/memory-layout.md`: RAM regions, linker sections, MPU/ETH/LwIP CubeMX settings.
   * `docs/roadmap.md`: stubs and planned features. `docs/issues.md`: open/solved bench-observed bugs.
-* **Before multi-file feature work or debugging**, read `docs/roadmap.md` and `docs/issues.md`. Key gaps: config is never saved to flash, `ArtNet_HandleArtAddress` is a stub, ArtTrigger/sACN/RGBW/RGB16 are not implemented, and `device_config` network fields are not applied (LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC, overriding the CubeMX static IP in `lwip.c` USER CODE).
+* **Before multi-file feature work or debugging**, read `docs/roadmap.md` and `docs/issues.md`. Key gaps: config is never saved to flash, `ArtNet_HandleArtAddress` is a stub, locate (`AcLedLocate`)/RDM/sACN/RGBW/RGB16 are not implemented, and `device_config` network fields are not applied (LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC, overriding the CubeMX static IP in `lwip.c` USER CODE).
 * **Keep docs current:** when a change completes a roadmap item, fixes an issue, or alters something a doc describes, update that doc in the same change.

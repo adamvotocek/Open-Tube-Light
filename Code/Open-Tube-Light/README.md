@@ -85,7 +85,7 @@ Presets: `Debug`, `Release`. User sources are listed in the root `CMakeLists.txt
 |---|---|
 | [docs/memory-layout.md](docs/memory-layout.md) | RAM regions, linker sections, MPU, ETH and LwIP CubeMX settings |
 | [docs/dmx-input-drivers.md](docs/dmx-input-drivers.md) | Input driver abstraction and how to add a protocol |
-| [docs/artnet-custom-protocol.md](docs/artnet-custom-protocol.md) | NodeReport format, custom ArtCommands, ArtTrigger locate |
+| [docs/artnet-custom-protocol.md](docs/artnet-custom-protocol.md) | Companion-app contract (transitional until RDM): NodeReport format, custom ArtCommands, locate via ArtAddress |
 | [docs/artnet-compliance.md](docs/artnet-compliance.md) | Art-Net 4 feature matrix: implemented / planned / not applicable, infrastructure prerequisites |
 | [docs/roadmap.md](docs/roadmap.md) | Planned features and open TODOs |
 | [docs/issues.md](docs/issues.md) | Open and solved hardware-observed bugs |
