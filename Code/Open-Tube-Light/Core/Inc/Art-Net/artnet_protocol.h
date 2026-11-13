@@ -101,6 +101,17 @@ extern "C" {
 #define ARTNET_OP_COMMAND       0x2400
 
 /**
+ * @brief OpDataRequest - Controller requests data such as product URLs
+ * @note Node replies with ArtDataReply, or not at all if the code is unsupported
+ */
+#define ARTNET_OP_DATA_REQUEST  0x2700
+
+/**
+ * @brief OpDataReply - Node's answer to OpDataRequest
+ */
+#define ARTNET_OP_DATA_REPLY    0x2800
+
+/**
  * @brief OpDmx (OpOutput) - DMX512 data transmission
  * @note Primary packet type for sending lighting data
  */
@@ -119,6 +130,22 @@ extern "C" {
  * @note Handler exists but is not yet implemented
  */
 #define ARTNET_OP_ADDRESS       0x6000
+
+/**
+ * @brief OpInput - Controller enables/disables DMX inputs of a node
+ * @note This node has no Art-Net inputs; it only answers with ArtPollReply
+ */
+#define ARTNET_OP_INPUT         0x7000
+
+/* ========================== ArtDataRequest Codes (Table 4a) ========================== */
+
+#define ARTNET_DR_POLL            0x0000  ///< DrPoll: is ArtDataRequest supported?
+#define ARTNET_DR_URL_PRODUCT     0x0001  ///< DrUrlProduct: manufacturer product page
+#define ARTNET_DR_URL_USER_GUIDE  0x0002  ///< DrUrlUserGuide: user guide
+#define ARTNET_DR_URL_SUPPORT     0x0003  ///< DrUrlSupport: support page
+
+/** @brief Maximum ArtDataReply payload, including the NUL terminator */
+#define ARTNET_DATA_REPLY_PAYLOAD_MAX  512
 
 /* ========================== Packet Structures ========================== */
 
@@ -217,7 +244,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  good_output_a[4];///< Output port status
     uint8_t  sw_in[4];       ///< Input port universe addresses
     uint8_t  sw_out[4];      ///< Output port universe addresses
-    uint8_t  sw_video;       ///< Video output switch
+    uint8_t  acn_priority;   ///< sACN priority for DMX->sACN conversion (0: no inputs)
     uint8_t  sw_macro;       ///< Macro key switch
     uint8_t  sw_remote;      ///< Remote switch
     uint8_t  spare[3];       ///< Spare bytes
@@ -279,6 +306,71 @@ typedef struct __attribute__((packed)) {
     uint8_t  command;         ///< Various commands for node configuration.
 
 } ArtNet_ArtAddress_t;
+
+/**
+ * @brief ArtInput packet - enable/disable DMX inputs (20 bytes)
+ * @note Node replies with ArtPollReply. Input[] is ignored: no inputs here.
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  id[8];           ///< "Art-Net\0" signature
+    uint16_t opcode;          ///< 0x7000 (little-endian)
+    uint8_t  prot_ver_hi;     ///< Protocol version high byte
+    uint8_t  prot_ver_lo;     ///< Protocol version low byte
+    uint8_t  filler1;         ///< Pad length to match ArtPoll
+    uint8_t  bind_index;      ///< Bound node addressed; 0 or 1 = root device
+    uint8_t  num_ports_hi;    ///< Number of ports high byte (0)
+    uint8_t  num_ports_lo;    ///< Number of ports low byte (max 4)
+    uint8_t  input[4];        ///< Bit 0 set = disable this input
+} ArtNet_ArtInput_t;
+
+/**
+ * @brief ArtDataRequest packet (40 bytes; only the first 20 are needed)
+ * @note EstaMan/Oem identify the sender, they are not filters.
+ *       Multi-byte fields are big-endian (Hi byte first).
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  id[8];           ///< "Art-Net\0" signature
+    uint16_t opcode;          ///< 0x2700 (little-endian)
+    uint8_t  prot_ver_hi;     ///< Protocol version high byte
+    uint8_t  prot_ver_lo;     ///< Protocol version low byte
+    uint8_t  esta_man_hi;     ///< Sender ESTA manufacturer code high byte
+    uint8_t  esta_man_lo;     ///< Sender ESTA manufacturer code low byte
+    uint8_t  oem_hi;          ///< Sender OEM code high byte
+    uint8_t  oem_lo;          ///< Sender OEM code low byte
+    uint8_t  request_hi;      ///< Requested data code high byte (Table 4a)
+    uint8_t  request_lo;      ///< Requested data code low byte
+    uint8_t  spare[22];       ///< Transmit as zero, receivers don't test
+} ArtNet_ArtDataRequest_t;
+
+/** @brief Bytes of ArtDataRequest needed to read the request code (spare excluded) */
+#define ARTNET_DATA_REQUEST_MIN_LENGTH  20U
+
+/**
+ * @brief ArtDataReply packet header (20 bytes); pay_len payload bytes follow
+ * @note Unlike ArtPollReply, EstaManHi comes before EstaManLo here.
+ *       Multi-byte fields are big-endian (Hi byte first).
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t  id[8];           ///< "Art-Net\0" signature
+    uint16_t opcode;          ///< 0x2800 (little-endian)
+    uint8_t  prot_ver_hi;     ///< Protocol version high byte (0)
+    uint8_t  prot_ver_lo;     ///< Protocol version low byte (14)
+    uint8_t  esta_man_hi;     ///< Node ESTA manufacturer code high byte
+    uint8_t  esta_man_lo;     ///< Node ESTA manufacturer code low byte
+    uint8_t  oem_hi;          ///< Node OEM code high byte
+    uint8_t  oem_lo;          ///< Node OEM code low byte
+    uint8_t  request_hi;      ///< Echoed request code high byte
+    uint8_t  request_lo;      ///< Echoed request code low byte
+    uint8_t  pay_len_hi;      ///< Payload length high byte
+    uint8_t  pay_len_lo;      ///< Payload length low byte
+} ArtNet_ArtDataReplyHeader_t;
+
+/* Wire sizes per Art-Net 4 spec; catch accidental padding or field edits */
+_Static_assert(sizeof(ArtNet_ArtPollReply_t) == 239, "ArtPollReply must be 239 bytes");
+_Static_assert(sizeof(ArtNet_ArtAddress_t) == 107, "ArtAddress must be 107 bytes");
+_Static_assert(sizeof(ArtNet_ArtInput_t) == 20, "ArtInput must be 20 bytes");
+_Static_assert(sizeof(ArtNet_ArtDataRequest_t) == 40, "ArtDataRequest must be 40 bytes");
+_Static_assert(sizeof(ArtNet_ArtDataReplyHeader_t) == 20, "ArtDataReply header must be 20 bytes");
 
 /* ========================== Protocol Helper Macros ========================== */
 

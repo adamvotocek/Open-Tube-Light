@@ -46,6 +46,9 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 
 ## Done
 
+- [x] Art-Net quick wins (`artnet-compliance.md` §12 step 1): unhandled opcodes dropped silently (`artnet_ignored_count`), replies to 0x1936 + requester's source port, GoodOutputA only while data is fresh, Status1 indicators = normal, Port-Address 0 rejected, ArtInput and ArtDataRequest (URLs) answered, credit line + merge policy in the repo-root README — bench-verified with `Temporary_Tests/python_artnet_scripts/artnet_quickwins_test.py` (57/57) and Lightkey
+- [x] ArtPoll reply queue de-duplicated per IP + port, so a tool on the same PC as the lighting software no longer loses poll replies (seen on the bench: every few polls swallowed while Lightkey ran) — bench-verified: 0 swallowed polls with Lightkey on the same PC
+
 - [x] Stack overflow hook records the task (`stack_monitor_overflow`) and halts at a breakpoint; per-task stack + heap high-water marks in `stack_monitor_report` (1 Hz) — watermarks bench-verified (all tasks have safe headroom); overflow halt not yet triggered on purpose
 - [x] `snprintf` removed from the ArtPollReply path in `tcpip_thread` (bounded NodeReport formatter, output byte-identical)
 - [x] Product identity constants (firmware version, HW revision, manufacturer, OEM/ESTA codes) in `device_config.h`; ArtPollReply uses them

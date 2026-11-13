@@ -105,9 +105,8 @@ static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segm
 /**
  * @brief Build status1, currently static
  *
- * Sets failsafe state bits based on device config.
- *       Bit 7-6: Indicator state (00=unknown)
- *       Bit 5-4: Port-Address programming (00=unknown)
+ *       Bit 7-6: Indicator state (11=normal; locate/mute come with ArtAddress AcLed*)
+ *       Bit 5-4: Port-Address programming authority (00=unknown until ArtAddress exists)
  *       Bit 3: Reserved (0)
  *       Bit 2: Boot mode (0=normal)
  *       Bit 1: RDM capable (0=no)
@@ -115,8 +114,7 @@ static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segm
  */
 static uint8_t ArtNet_BuildStatus1(void)
 {
-    // TODO: Implement port address programming authority reporting and indicator state based on device status
-    uint8_t status1 = 0x00;
+    uint8_t status1 = (uint8_t)(0x3U << 6);  // Indicators in normal mode
 
     return status1;
 }
@@ -248,6 +246,7 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     ArtNet_FormatNodeReport(reply->node_report, sizeof(reply->node_report), config);
     
     // ===== PORTS =====
+    uint32_t now = osKernelGetTickCount();
     uint8_t num_ports = num_universes;
     reply->num_ports_hi = 0;  // Reserved
     reply->num_ports_lo = num_ports;
@@ -259,12 +258,15 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
         // SwOut: Universe address (low 4 bits)
         reply->sw_out[i] = (config->dmx.artnet_start_universe + i) & 0x0F;
         
-        // GoodOutputA: Data transmitting status
-        // Use per-universe source_ip to determine if a controller is actively
-        // driving this universe 
+        // GoodOutputA bit 7: data is being output on this port.
+        // source_ip alone is not enough: it is only released when the next
+        // ArtDmx arrives, so it stays set forever after a controller stops.
+        // Require a recent ArtDmx as well. 
+        const ArtNet_UniverseState_t *uni = &g_artnet_ctx.universes[i];
         uint8_t good_output = 0x00;
-        if (!ip_addr_isany(&g_artnet_ctx.universes[i].source_ip)) {
-            good_output |= 0x80;  // Bit 7: Data being transmitted
+        if (!ip_addr_isany(&uni->source_ip) &&
+            (now - uni->last_dmx_tick) <= ARTNET_DISCONNECT_TIMEOUT_MS) {
+            good_output |= 0x80;
         }
         reply->good_output_a[i] = good_output;
         
@@ -291,8 +293,8 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     reply->refresh_rate_hi = 0;
     reply->refresh_rate_lo = config->dmx.artnet_max_refresh_rate;
     
-    // Send reply to the requesting controller
-    udp_sendto(g_artnet_ctx.pcb, p, addr, port);
+    // Send reply to the requesting controller (0x1936, plus its source port if not 0x1936)
+    ArtNet_SendReply(p, addr, port);
     pbuf_free(p);
 }
 

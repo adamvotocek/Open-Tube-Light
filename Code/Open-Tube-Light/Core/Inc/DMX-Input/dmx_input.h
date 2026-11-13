@@ -69,7 +69,8 @@ typedef struct {
      * @brief Protocol-specific disconnect timeout in milliseconds
      * 
      * After this duration without new data, the consumer applies failsafe.
-     * Values per protocol specs: Art-Net=4000, sACN=2500, DMX512=1250.
+     * Art-Net=5000 (must exceed the spec's 4 s ArtDmx keep-alive),
+     * sACN=2500 (E1.31 network data loss), DMX512=1250 (E1.11 break-to-break).
      */
     uint32_t failsafe_timeout_ms;
 } DMX_Input_Driver_t;
@@ -115,7 +116,7 @@ const uint8_t* DMX_Input_GetUniverse(uint8_t universe);
 /**
  * @brief Get the active protocol's failsafe timeout
  * 
- * @return Timeout in ms, or 4000 as default if no driver is active
+ * @return Timeout in ms, or 12000 (conservative default) if no driver is active
  */
 uint32_t DMX_Input_GetFailsafeTimeout(void);
 

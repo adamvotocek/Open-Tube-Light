@@ -72,6 +72,15 @@ extern "C" {
 /** @brief Manufacturer name */
 #define DEVICE_CONFIG_MANUFACTURER      "Open Tube Light"
 
+/** @brief Product page URL (Art-Net ArtDataReply DrUrlProduct) */
+#define DEVICE_CONFIG_URL_PRODUCT       "https://github.com/adamvotocek/Open-Tube-Light"
+
+/** @brief User guide URL (Art-Net ArtDataReply DrUrlUserGuide) */
+#define DEVICE_CONFIG_URL_USER_GUIDE    "https://github.com/adamvotocek/Open-Tube-Light/blob/main/README.md"
+
+/** @brief Support page URL (Art-Net ArtDataReply DrUrlSupport) */
+#define DEVICE_CONFIG_URL_SUPPORT       "https://github.com/adamvotocek/Open-Tube-Light/issues"
+
 /** @brief Art-Net OEM code (ArtPollReply Oem); 0xFFFF = prototype, not registered with Artistic Licence */
 #define DEVICE_CONFIG_ARTNET_OEM_CODE   0xFFFFU
 

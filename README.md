@@ -12,4 +12,12 @@ An open-hardware LED tube fixture for stage and installation lighting. It takes 
 | [`PCB/releases/`](PCB/releases/) | Fabrication packages for released board revisions |
 | [`PCB/TODOs.txt`](PCB/TODOs.txt) | Known issues for the next board revision |
 | [`Enclosure/`](Enclosure/) | Mechanical drawings (acrylic tube) |
-| `*.qxw` | QLC+ workspaces used for testing (single universe, 4 universes, 8 segments) |
+
+
+## Art-Net
+
+The fixture is an Art-Net 4 node (output only). Discovery (ArtPoll), ArtSync, ArtCommand and ArtDataRequest (product, user guide and support URLs) are supported. Spec coverage is tracked in [`Code/Open-Tube-Light/docs/artnet-compliance.md`](Code/Open-Tube-Light/docs/artnet-compliance.md).
+
+**Multiple controllers / merging.** The fixture does not merge (no HTP/LTP). Each universe is owned by the first controller that sends ArtDmx to it. ArtDmx for that universe from any other IP address is ignored until the owner has sent nothing for 5 seconds, after which the next sender takes over. ArtSync is honoured per controller: a universe enters synchronous mode only on ArtSync from its own controller.
+
+Art-Net™ Designed by and Copyright Artistic Licence

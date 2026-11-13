@@ -8,7 +8,9 @@
  * - ArtCommand: Custom runtime configuration commands
  * - ArtSync: Per-universe frame synchronization
  * - ArtAddress: Remote configuration (future)
- * 
+ * - ArtInput: Replies with ArtPollReply (node has no inputs)
+ * - ArtDataRequest: Product / user guide / support URLs via ArtDataReply
+ *
  * All handlers run in LwIP tcpip_thread context.
  */
 
@@ -27,9 +29,12 @@
 
 /* ========================== Private Functions ========================== */
 
+static void ArtNet_ReplyImmediate(const ip_addr_t *src_ip, u16_t src_port);
 static void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
                                         uint16_t code, const char *detail);
-static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip);
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip, u16_t src_port);
+static void ArtNet_SendDataReply(uint16_t request, const char *text,
+                                 const ip_addr_t *src_ip, u16_t src_port);
 static const char *ArtNet_GetCommandSuccessDetail(bool dmx_address_changed,
                                                   bool segment_count_changed,
                                                   bool mode_changed);
@@ -223,11 +228,23 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
     // ===== QUEUE REPLY =====
     ArtNet_PollReplyQueue_t *q = &g_artnet_ctx.reply_queue;
     
-    // Deduplicate: if this controller IP is already queued, skip
+    // Deduplicate per controller. A queued reply always goes to 0x1936 plus
+    // the entry's port (ArtNet_SendReply), so de-duplicating by IP alone would
+    // swallow polls from a tool on the same PC as the lighting software
+    // (OpenTubeDia next to Lightkey): its reply would only reach 0x1936.
     for (uint8_t i = 0; i < q->count; i++) {
-        if (ip_addr_cmp(addr, &q->entries[i].addr)) {
+        ArtNet_PollReplyDest_t *entry = &q->entries[i];
+        if (!ip_addr_cmp(addr, &entry->addr)) {
+            continue;
+        }
+        if (entry->port == port || port == ARTNET_PORT) {
+            return;  // Already covered by the queued reply
+        }
+        if (entry->port == ARTNET_PORT) {
+            entry->port = port;  // Widen: one reply now reaches 0x1936 and this port
             return;
         }
+        // Same IP, two different non-0x1936 ports: queue a separate reply
     }
     
     // Queue full: drop oldest entry (shift left) to make room
@@ -417,39 +434,156 @@ void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len,
                                 "ArtAddress Unsupported");
 }
 
+/* ========================== ArtInput Handler ========================== */
+
+/**
+ * @brief Handle incoming ArtInput packet
+ *
+ * Spec packet strategy: Node receive -> reply with ArtPollReply. This node
+ * has no Art-Net inputs, so Input[] disable bits have nothing to act on; the
+ * reply just reports the (unchanged) state. NodeReport is left untouched.
+ */
+void ArtNet_HandleArtInput(const ArtNet_ArtInput_t *pkt,
+                           const ip_addr_t *src_ip, u16_t src_port)
+{
+    // BindIndex 0 or 1 = root device; higher indices address binds we don't have
+    if (pkt->bind_index > 1U) {
+        return;
+    }
+
+    ArtNet_ReplyImmediate(src_ip, src_port);
+}
+
+/* ========================== ArtDataRequest Handler ========================== */
+
+/**
+ * @brief Handle incoming ArtDataRequest packet
+ *
+ * Answers DrPoll (empty payload) and the product / user guide / support URLs.
+ * Any other code gets no reply, which the spec defines as "not supported".
+ */
+void ArtNet_HandleArtDataRequest(const ArtNet_ArtDataRequest_t *pkt,
+                                 const ip_addr_t *src_ip, u16_t src_port)
+{
+    uint16_t request = ((uint16_t)pkt->request_hi << 8) | pkt->request_lo;
+
+    switch (request) {
+        case ARTNET_DR_POLL:
+            ArtNet_SendDataReply(request, NULL, src_ip, src_port);
+            break;
+        case ARTNET_DR_URL_PRODUCT:
+            ArtNet_SendDataReply(request, DEVICE_CONFIG_URL_PRODUCT, src_ip, src_port);
+            break;
+        case ARTNET_DR_URL_USER_GUIDE:
+            ArtNet_SendDataReply(request, DEVICE_CONFIG_URL_USER_GUIDE, src_ip, src_port);
+            break;
+        case ARTNET_DR_URL_SUPPORT:
+            ArtNet_SendDataReply(request, DEVICE_CONFIG_URL_SUPPORT, src_ip, src_port);
+            break;
+        default:
+            // DrUrlPersUdr/Gdtf, manufacturer-specific, unknown: unsupported
+            break;
+    }
+}
+
 /* ========================== Private Functions ========================== */
+
+/**
+ * @brief Send an ArtPollReply now, replacing a queued one for the same controller
+ *
+ * If a delayed ArtPollReply for the same controller is already queued,
+ * collapse it into this immediate reply so the controller does not receive
+ * two near-identical PollReply packets for one interaction.
+ */
+static void ArtNet_ReplyImmediate(const ip_addr_t *src_ip, u16_t src_port)
+{
+    ArtNet_RemoveQueuedPollReply(src_ip, src_port);
+    ArtNet_SendPollReply(src_ip, src_port);
+}
 
 static void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
                                         uint16_t code, const char *detail)
 {
-    // If a delayed ArtPollReply for the same controller is already queued,
-    // collapse it into this immediate status reply so the controller does not
-    // receive two near-identical PollReply packets for one interaction.
-    ArtNet_RemoveQueuedPollReply(src_ip);
     ArtNet_NodeReportSet(code, detail);
-    ArtNet_SendPollReply(src_ip, src_port);
+    ArtNet_ReplyImmediate(src_ip, src_port);
 }
 
-static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip)
+/**
+ * @brief Build and send an ArtDataReply
+ *
+ * Built directly in the pbuf (no stack buffer): runs in tcpip_thread.
+ *
+ * @param request Request code to echo
+ * @param text    NUL-terminated payload, or NULL for an empty payload (DrPoll)
+ */
+static void ArtNet_SendDataReply(uint16_t request, const char *text,
+                                 const ip_addr_t *src_ip, u16_t src_port)
+{
+    // Payload is string data including its NUL terminator
+    size_t pay_len = (text != NULL) ? (strlen(text) + 1U) : 0U;
+    if (pay_len > ARTNET_DATA_REPLY_PAYLOAD_MAX) {
+        return;  // Compile-time URLs; cannot happen, but never overflow
+    }
+
+    const uint16_t total_len = (uint16_t)(sizeof(ArtNet_ArtDataReplyHeader_t) + pay_len);
+    struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, total_len, PBUF_RAM);
+    if (p == NULL) {
+        return;
+    }
+
+    ArtNet_ArtDataReplyHeader_t *hdr = (ArtNet_ArtDataReplyHeader_t *)p->payload;
+    memset(hdr, 0, sizeof(*hdr));
+    memcpy(hdr->id, ARTNET_ID, 8);
+    hdr->opcode      = ARTNET_OP_DATA_REPLY;
+    hdr->prot_ver_hi = 0U;
+    hdr->prot_ver_lo = ARTNET_PROTOCOL_VERSION;
+    hdr->esta_man_hi = (uint8_t)(DEVICE_CONFIG_ESTA_MAN_CODE >> 8);
+    hdr->esta_man_lo = (uint8_t)(DEVICE_CONFIG_ESTA_MAN_CODE & 0xFFU);
+    hdr->oem_hi      = (uint8_t)(DEVICE_CONFIG_ARTNET_OEM_CODE >> 8);
+    hdr->oem_lo      = (uint8_t)(DEVICE_CONFIG_ARTNET_OEM_CODE & 0xFFU);
+    hdr->request_hi  = (uint8_t)(request >> 8);
+    hdr->request_lo  = (uint8_t)(request & 0xFFU);
+    hdr->pay_len_hi  = (uint8_t)(pay_len >> 8);
+    hdr->pay_len_lo  = (uint8_t)(pay_len & 0xFFU);
+
+    if (pay_len > 0U) {
+        memcpy((uint8_t *)p->payload + sizeof(*hdr), text, pay_len);
+    }
+
+    ArtNet_SendReply(p, src_ip, src_port);
+    pbuf_free(p);
+}
+
+/**
+ * Drop queued ArtPoll replies that an immediate reply to (src_ip, src_port)
+ * already covers: same IP, and port 0x1936 or src_port (ArtNet_SendReply
+ * sends to both). A queued reply for another tool on that IP stays queued.
+ */
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip, u16_t src_port)
 {
     ArtNet_PollReplyQueue_t *queue = &g_artnet_ctx.reply_queue;
+    uint8_t kept = 0U;
 
     if (src_ip == NULL) {
         return;
     }
 
     for (uint8_t i = 0; i < queue->count; i++) {
-        if (ip_addr_cmp(src_ip, &queue->entries[i].addr)) {
-            for (uint8_t j = i + 1U; j < queue->count; j++) {
-                queue->entries[j - 1U] = queue->entries[j];
-            }
-
-            queue->count--;
-            if (queue->count == 0U && g_artnet_ctx.poll_reply_timer != NULL) {
-                osTimerStop(g_artnet_ctx.poll_reply_timer);
-            }
-            return;
+        const ArtNet_PollReplyDest_t *entry = &queue->entries[i];
+        bool covered = ip_addr_cmp(src_ip, &entry->addr) &&
+                       (entry->port == ARTNET_PORT || entry->port == src_port);
+        if (!covered) {
+            queue->entries[kept++] = *entry;
         }
+    }
+
+    if (kept == queue->count) {
+        return;  // Nothing removed
+    }
+
+    queue->count = kept;
+    if (queue->count == 0U && g_artnet_ctx.poll_reply_timer != NULL) {
+        osTimerStop(g_artnet_ctx.poll_reply_timer);
     }
 }
 

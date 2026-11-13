@@ -4,7 +4,7 @@ Firmware for the Open-Tube-Light LED tube fixture, running on an STM32H723VET6. 
 
 ## Capabilities
 
-- Art-Net 4 input over Ethernet, multi-universe, with ArtPoll/ArtPollReply discovery and ArtSync
+- Art-Net 4 input over Ethernet, multi-universe, with ArtPoll/ArtPollReply discovery and ArtSync; ArtDataRequest (product / user guide / support URLs) and ArtInput. Spec coverage: [docs/artnet-compliance.md](docs/artnet-compliance.md)
 - DMX512 input over UART5 / RS-485 with DMA, break and idle detection, partial-universe support
 - SK9822 output over SPI1 + DMA (ping-pong buffers), idle refresh every 150 ms
 - Configurable segment count (logical DMX pixels mapped onto 144 physical LEDs), DMX start address, Art-Net Port-Address

@@ -1,6 +1,6 @@
 # Art-Net 4 Compliance Matrix 
 
-Every feature of the Art-Net 4 specification (`docs/reference/Art-Net_4.md`, rev. DP), checked against the firmware as of commit `12eacf9`. OEM and ESTA codes are out of scope for now. Features that depend on them are marked **needs OEM/ESTA**.
+Every feature of the Art-Net 4 specification (`docs/reference/Art-Net_4.md`, rev. DP), checked against the firmware as of commit `12eacf9` plus the Art-Net quick-wins change. OEM and ESTA codes are out of scope for now. Features that depend on them are marked **needs OEM/ESTA**.
 
 Coverage was rechecked by grepping every *shall / must / should / not allowed* statement in the spec. Requirements that apply only to controllers are listed in section 13 so it is clear they were considered. The opcode table in the markdown conversion is incomplete: `OpIpProg` = 0xF800 and `OpRdmSub` = 0x8400 come from the official spec.
 
@@ -44,26 +44,26 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 |---|---|---|---|
 | Validate `ID[8]` = `"Art-Net\0"` | Done | Must | — |
 | Accept packets longer than the minimum, ignore extra bytes | Done | Must | — |
-| UDP port 0x1936 as source **and destination** | Partial | Must | Replies go to the sender's source port (`artnet_pollreply.c:295`). Send to 0x1936, or to both if the companion app sends from an ephemeral port. |
-| Silently ignore packets the node does not handle | Partial | Must | Every unknown opcode overwrites the NodeReport with `RcParseFail` (`artnet.c:254`), so other nodes' ArtPollReply, ArtTimeCode, ArtTodRequest and so on clobber real status. Drop known-but-unused opcodes silently. Flag only truly unknown ones. |
+| UDP port 0x1936 as source **and destination** | Done | Must | `ArtNet_SendReply()` sends every reply to 0x1936, plus a copy to the request's source port if that differs, so OpenTubeDia can run next to lighting software (`artnet-custom-protocol.md`). |
+| Silently ignore packets the node does not handle | Done | Must | Non-Art-Net datagrams and unhandled opcodes are dropped without touching the NodeReport and counted in `artnet_ignored_count`. `RcParseFail` is kept for malformed packets of handled opcodes. |
 | Protocol version check (`ProtVerLo` ≥ 14) | Missing | Nice | Spec only requires the ID check. Optional: drop `ProtVer < 14`. |
 | Spare/unused bits and fields: transmit as 0, do not test on receipt | Done | Must | Keep this rule for every new packet (ArtDataReply, ArtIpProgReply, ArtDiagData). |
 | Never send to the limited broadcast 255.255.255.255 | Done | Must | Only unicast today. Future ArtDiagData broadcast must use the directed broadcast of the netif subnet. |
-| Port-Address 0 is deprecated (valid range 1–32767) | Partial | Should | The default is universe 1, which is fine. Validation still allows `0:0:0` (`device_config.c:581`). Reject it in `Config_ValidateCandidate`. |
+| Port-Address 0 is deprecated (valid range 1–32767) | Done | Should | `Config_ValidateCandidate` rejects `0:0:0`. The default is universe 1. |
 | One Net, one Sub-Net and one Universe "switch" per port (hard or soft) | Partial | Must | They exist as config fields, but nothing can change them at runtime: no UI, ArtAddress is a stub, and ArtCommand doesn't touch them. Fixed by ArtAddress plus the local UI. |
-| Failsafe timeout longer than the 4 s ArtDmx keep-alive | Done | Must | 5 s (`ARTNET_DISCONNECT_TIMEOUT_MS`). A controller with static data may resend only every 4 s. The comment in `dmx_input.h:72` still says 4000. |
+| Failsafe timeout longer than the 4 s ArtDmx keep-alive | Done | Must | 5 s (`ARTNET_DISCONNECT_TIMEOUT_MS`). A controller with static data may resend only every 4 s. |
 | Do not ship DMX-Workshop / Art-Net SDK code | Done | Must | The SDK is copyright Singularity (UK) Ltd. Nothing from it is used. Copying OEM code *numbers* is fine. |
-| User-guide credit "Art-Net™ Designed by and Copyright Artistic Licence" | Missing | Must | Add it to the README / user guide. |
+| User-guide credit "Art-Net™ Designed by and Copyright Artistic Licence" | Done | Must | In the repo-root `README.md`, "Art-Net" section. Move it into the user guide when one exists. |
 | Status display (Power / Com / DMX indicators, 6 s timeout) | Missing | Nice | OLED: "Com" icon when any Art-Net packet arrived in the last 6 s; per-universe "receiving" marks. |
 
 ## 3. Discovery — ArtPoll (0x2000)
 
 | Feature | Status | Implement? | Suggestion |
 |---|---|---|---|
-| Reply with ArtPollReply, random 0–1 s delay | Done | Must | — |
+| Reply with ArtPollReply, random 0–1 s delay | Done | Must | The delay applies to ArtPoll only (it exists to spread replies to a broadcast poll). ArtAddress and ArtInput are unicast acknowledgements and are answered immediately; an immediate reply cancels the queued poll reply it covers. |
 | Unicast reply (broadcast not allowed in Art-Net 4) | Done | Must | — |
 | Accept ArtPoll ≥ 14 bytes, missing fields = 0 | Done | Must | — |
-| Multiple controllers polling in the same window | Done | Must | Queue of 4, deduplicated by IP. |
+| Multiple controllers polling in the same window | Done | Must | Queue of 4, deduplicated by IP + port: a poll from 0x1936 and one from an ephemeral port on the same PC share one entry, which then replies to both ports. |
 | Flags bit 5 — Targeted Mode | Done | Must | — |
 | Flags bit 1 — send ArtPollReply whenever node conditions change | Missing | Should | Controller registry (IP + flags, expires after ~10 s without a poll). On a config change, merge start/stop, locate on/off or IP change → unicast ArtPollReply to every registered controller with bit 1 set. |
 | Flags bit 2/3 + DiagPriority — diagnostics requested | Missing | Should | Needs ArtDiagData (section 9). Rules: any controller asks → send. Several ask → broadcast. Use the lowest DiagPriority. |
@@ -83,13 +83,13 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 | NodeReport `#xxxx [yyyy] text` | Done | Must | Custom extension inside the free-text part is allowed (`artnet-custom-protocol.md`). |
 | NodeReport codes (Table 3) | Partial | Should | Uses 0x0001/0x0004/0x0006/0x0007/0x000C. Add `RcDmxError` (DMX512 receive errors, once Art-Net runs in DMX512 mode), `RcFactoryRes` (after a factory reset), `RcUserFail` (only if network programming ever locks the UI). `RcDebug` is optional for Debug builds. |
 | Oem / EstaMan | Partial | Should | Placeholders 0xFFFF / 0x0000. **Needs OEM/ESTA.** |
-| GoodOutputA bit 7 — data being output | Partial | Must | Set while `source_ip` is assigned, but that is cleared only when the *next* ArtDmx arrives, so the bit stays on forever after a controller stops (`artnet_pollreply.c:265`). Compute it from `now - last_dmx_tick < timeout` at reply time. |
+| GoodOutputA bit 7 — data being output | Done | Must | Set only while the universe has a source *and* the last ArtDmx is ≤ 5 s old. |
 | GoodOutputA bit 3 — merging, bit 1 — LTP | Missing | Should | Comes with the merge engine. |
 | GoodOutputA bit 0 — output converts from sACN | Missing | Nice | Set when the input source is sACN (after AcAcnSel0). |
 | GoodOutputA bits 6/5/4/2 — test / SIP / text packets, short | Done (0) | No | Not applicable. |
 | GoodOutputB — RDM off, continuous, no discovery | Done | Must | 0xF0 is correct for this device. |
 | GoodInput / SwIn / PortTypes bit 6 | Done (0) | No | No Art-Net inputs. |
-| Status1 bits 7-6 — indicator state | Missing | Should | 11 = normal, 01 = locate, 10 = mute. Driven by AcLed* (section 6). |
+| Status1 bits 7-6 — indicator state | Partial | Should | Reports 11 (normal). 01 = locate and 10 = mute come with ArtAddress AcLed* (section 6). |
 | Status1 bits 5-4 — Port-Address authority | Missing | Should | 01 = set from the front panel / defaults, 10 = programmed over the network (ArtAddress/ArtCommand). Track the source of the last addressing change. |
 | Status1 bit 2 boot mode, bit 1 RDM, bit 0 UBEA | Done (0) | — | Correct values for current capabilities. |
 | Status2 bit 3 — 15-bit Port-Address | Done | Must | — |
@@ -101,7 +101,7 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 | Status3 bits 4-0 — LLRP, direction switch, RDMnet, background queue | Done (0) | No | — |
 | BindIp / BindIndex | Done | Must | Root device, index 1. Multi-bind only needed for more than 4 ports (section 11.9). |
 | RefreshRate | Done | Should | From config (≥ 44). SPI output is not limited to DMX512 timing, so a measured higher rate may be reported. |
-| AcnPriority (field 25) | Partial | No | Always 0, which is fine. The struct still calls it `sw_video` (`artnet_protocol.h:220`). Rename it to `acn_priority`. |
+| AcnPriority (field 25) | Done | No | Always 0 (no inputs). The struct field is `acn_priority`. |
 | SwMacro / SwRemote | Done (0) | No | The UI buttons are not remote triggers. |
 | DefaultRespUID, BackgroundQueuePolicy, User | Done (0) | No | Only with RDMnet/LLRP. |
 
@@ -115,7 +115,7 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 | Continuous output without new ArtDmx | Done | Must | 150 ms idle refresh. |
 | Failsafe on loss of data (hold/zero/full) | Done | Should | — |
 | `Physical` field identifies a separate source | Missing | Should | Key sources by (IP, Physical), not IP alone. |
-| Data merging, two sources, HTP (default) / LTP | Missing | Should ("preferred") | Today a second source is ignored for 5 s ("first source wins"). That is allowed only if it is **documented in the user guide**. Better: a merge engine with 2 source slots per universe (section 11.7). |
+| Data merging, two sources, HTP (default) / LTP | Partial | Should ("preferred") | No merge. A second source is ignored until the owner has been silent for 5 s ("first source wins"). This policy is documented in the repo-root `README.md`, which the spec allows. Better: a merge engine with 2 source slots per universe (section 11.7). |
 | Merge exit: 10 s timeout of a failed source; hold result if both fail | Missing | Should | Part of the merge engine. |
 | ArtSync: power-on in non-sync mode, enter sync on ArtSync, 4 s timeout | Done | Must | — |
 | ArtSync: only from the IP of the last ArtDmx | Done | Must | Per universe. |
@@ -178,11 +178,11 @@ The per-port commands for ports 1–3 (`0x11–0x13`, `0x21–0x23`, …) are de
 
 | Packet | Status | Implement? | Suggestion |
 |---|---|---|---|
-| **ArtDataRequest / ArtDataReply** (0x2700/0x2800) | Missing | Nice | Easy win. Answer `DrPoll`, `DrUrlProduct`, `DrUrlUserGuide`, `DrUrlSupport` (GitHub URLs as `#define`s next to the product identity). No reply = unsupported, which is compliant. |
+| **ArtDataRequest / ArtDataReply** (0x2700/0x2800) | Done | Nice | `DrPoll` (empty payload), `DrUrlProduct` / `DrUrlUserGuide` / `DrUrlSupport` (`DEVICE_CONFIG_URL_*` in `device_config.h`). Other codes get no reply, which means "not supported". A GDTF file would enable `DrUrlPersGdtf` later. |
 | **ArtDiagData** (0x2300) | Missing | Should | Send short text (parse errors, config errors, merge start, DMX errors) when the controller registry says diagnostics are wanted. Rate-limit. Unicast or directed broadcast per the ArtPoll rules. |
 | **ArtTrigger** (0x9900) | Missing | Nice | Application specific. The planned KeyWink locate uses Key 4 with Oem 0xFFFF, which the spec reserves ("Undefined"). Prefer ArtAddress `AcLedLocate` for locate. Keep ArtTrigger for OEM-specific keys gated on `Oem == own OEM`. **Needs OEM.** Update `artnet-custom-protocol.md` if this changes. |
 | **ArtTimeCode** (0x9700) | Ignored | No | No time-based effects. Drop silently. |
-| **ArtInput** (0x7000) | Ignored | Nice | No inputs, but the strategy says "reply with ArtPollReply". That is a trivial addition. |
+| **ArtInput** (0x7000) | Done | Nice | Immediate ArtPollReply for BindIndex 0/1. The NodeReport is unchanged. Input[] is ignored (no inputs). |
 | **ArtFirmwareMaster / ArtFirmwareReply** (0xF200/0xF300), UBEA | Ignored | No | The app is about 158 KB, the flash is 512 KB in four 128 KB sectors, and one sector is needed for config. There is no room for A/B images, so this needs a bootloader. The `.alf` header lists valid OEM codes (**needs OEM**). Keep ST-Link / DFU. Not supported = no reply. UbeaVersion = 0 and Status1 bit 0 = 0 are correct. |
 | **ArtTodRequest** (0x8000) | Ignored | Nice (later) | Reply with ArtTodData for the matching Net + Address[]. It must not force a full discovery. |
 | **ArtTodData** (0x8100) | Ignored | Nice (later) | Unicast only. BindIndex must match ArtPollReply. `TodNak` when not available. |
@@ -199,8 +199,8 @@ The per-port commands for ports 1–3 (`0x11–0x13`, `0x21–0x23`, …) are de
 
 The essential items for this device, in order:
 
-1. Fix the deviations: silent drop of unused opcodes, GoodOutputA staleness, reply port, Port-Address 0, `sw_video` rename.
-2. Documentation: the credit line and the merge policy ("first source wins for 5 s; second source ignored") in the user guide.
+1. ~~Fix the deviations: silent drop of unused opcodes, GoodOutputA staleness, reply port, Port-Address 0, `sw_video` rename.~~ Done.
+2. ~~Documentation: the credit line and the merge policy in the user guide.~~ Done (repo-root `README.md`).
 3. ArtAddress: names, Net/Sub/SwOut, AcFail Hold/Zero/Full, AcLed*, AcCancelMerge. Then Status1 indicator/authority bits and Status3 bit 5.
 4. Persistence of everything ArtAddress programs (the spec explicitly asks for failsafe/merge settings to survive power cycles).
 5. ArtPoll Flags bit 1 (reply on change).
@@ -226,7 +226,7 @@ Everything else (merge, DHCP/2.x, ArtIpProg, diagnostics, DataRequest, sACN sele
 
 ## 12. Suggested order
 
-1. **Quick fixes, no infrastructure:** section 10 item 1; Status1 indicator = 11 (normal); ArtInput → ArtPollReply; ArtDataRequest; user-guide credit and merge-policy text. Detailed plan: `plans/artnet-quick-wins.md` (local only).
+1. ~~**Quick fixes, no infrastructure:** section 10 items 1–2; Status1 indicator = 11 (normal); ArtInput → ArtPollReply; ArtDataRequest.~~ Done.
 2. **11.1 → ArtAddress** first slice (runtime-only), with 11.8 for AcLed*/AcClearOp0, plus 11.5/11.6 for Flags bit 1.
 3. **11.2 persistence**, then AcFail* is fully compliant and Status3 bit 5 can be set.
 4. **11.3 network**, then ArtIpProg.

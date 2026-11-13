@@ -6,7 +6,10 @@
  * UDP receive callback, packet dispatch, and buffer management.
  * 
  * Packet-specific handling is delegated to:
- * - artnet_handlers.c: ArtDmx, ArtPoll, ArtCommand, ArtSync, ArtAddress handlers
+ * - artnet_handlers.c: ArtDmx, ArtPoll, ArtCommand, ArtSync, ArtAddress,
+ *   ArtInput, ArtDataRequest handlers
+ *
+ * Opcodes without a handler are dropped silently (artnet_ignored_count).
  * - artnet_pollreply.c: ArtPollReply construction and transmission
  * 
  * @see artnet_internal.h for shared internal types and state
@@ -23,6 +26,16 @@
 /* ========================== Shared State ========================== */
 
 ArtNet_Context_t g_artnet_ctx = {0};
+
+/**
+ * @brief Packets dropped without action (Live Watch)
+ *
+ * Counts UDP datagrams on port 0x1936 that are too short to be Art-Net or
+ * carry an opcode this node does not handle (other nodes' ArtPollReply,
+ * ArtTimeCode, RDM, ...). The spec requires these to be ignored, so they no
+ * longer touch the NodeReport.
+ */
+uint32_t artnet_ignored_count = 0;
 
 /**
  * @brief Shadow buffers for incoming DMX data
@@ -191,8 +204,10 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
         return;
     }
 
+    // Too short to be Art-Net at all: not ours, ignore silently (spec: "Any
+    // other packets are ignored")
     if (p->tot_len < sizeof(ArtNet_Header_t)) {
-        ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL, "Header Too Short");
+        artnet_ignored_count++;
         pbuf_free(p);
         return;
     }
@@ -202,6 +217,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     
     // Validate Art-Net header signature
     if (!ArtNet_ValidateHeader(data)) {
+        artnet_ignored_count++;
         pbuf_free(p);
         return;
     }
@@ -249,9 +265,30 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
                                     addr, port);
             break;
             
+        case ARTNET_OP_INPUT:
+            if (p->tot_len >= sizeof(ArtNet_ArtInput_t)) {
+                ArtNet_HandleArtInput((const ArtNet_ArtInput_t *)data, addr, port);
+            } else {
+                ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                     "ArtInput Too Short");
+            }
+            break;
+
+        case ARTNET_OP_DATA_REQUEST:
+            if (p->tot_len >= ARTNET_DATA_REQUEST_MIN_LENGTH) {
+                ArtNet_HandleArtDataRequest((const ArtNet_ArtDataRequest_t *)data,
+                                            addr, port);
+            } else {
+                ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
+                                     "ArtDataReq Too Short");
+            }
+            break;
+
         default:
-            ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
-                                 "Unsupported OpCode");
+            // Valid Art-Net we take no action on (OpPollReply from other
+            // nodes, OpTimeCode, RDM, ...). Do not overwrite the NodeReport:
+            // that would hide real status behind normal network traffic.
+            artnet_ignored_count++;
             break;
     }
     
@@ -299,6 +336,34 @@ bool ArtNet_ValidateHeader(const uint8_t *data)
     }
 
     return (memcmp(data, ARTNET_ID, 8) == 0);
+}
+
+void ArtNet_SendReply(struct pbuf *p, const ip_addr_t *addr, u16_t src_port)
+{
+    if (p == NULL || addr == NULL || g_artnet_ctx.pcb == NULL) {
+        return;
+    }
+
+    // Spec: Art-Net uses 0x1936 as source and destination port, and every
+    // controller listens there.
+    // Tools that share the PC with lighting software (OpenTubeDia) cannot bind
+    // 0x1936 and send from an ephemeral port: give them a copy there too.
+    // The copy needs its own pbuf, cloned BEFORE the first send: udp_sendto()
+    // prepends the UDP/IP/Ethernet headers in place and never strips them, so
+    // re-sending `p` would put the stale headers into the second datagram's
+    // payload (and the zero-copy ETH driver still holds `p` for TX DMA).
+    // If the LwIP heap is short, only the spec reply goes out.
+    struct pbuf *copy = NULL;
+    if (src_port != ARTNET_PORT) {
+        copy = pbuf_clone(PBUF_TRANSPORT, PBUF_RAM, p);
+    }
+
+    udp_sendto(g_artnet_ctx.pcb, p, addr, ARTNET_PORT);
+
+    if (copy != NULL) {
+        udp_sendto(g_artnet_ctx.pcb, copy, addr, src_port);
+        pbuf_free(copy);
+    }
 }
 
 uint32_t ArtNet_PrngNext(void)

@@ -142,6 +142,20 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip);
 void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len,
                             const ip_addr_t *src_ip, u16_t src_port);
 
+/**
+ * @brief Handle incoming ArtInput packet (reply with ArtPollReply)
+ * @note Caller guarantees len >= sizeof(ArtNet_ArtInput_t)
+ */
+void ArtNet_HandleArtInput(const ArtNet_ArtInput_t *pkt,
+                           const ip_addr_t *src_ip, u16_t src_port);
+
+/**
+ * @brief Handle incoming ArtDataRequest packet (reply with ArtDataReply)
+ * @note Caller guarantees len >= ARTNET_DATA_REQUEST_MIN_LENGTH
+ */
+void ArtNet_HandleArtDataRequest(const ArtNet_ArtDataRequest_t *pkt,
+                                 const ip_addr_t *src_ip, u16_t src_port);
+
 /* ========================== Internal Functions - ArtPollReply ========================== */
 
 /**
@@ -163,6 +177,20 @@ void ArtNet_NodeReportSet(uint16_t code, const char *detail);
 
 /** @brief Validate Art-Net packet header ("Art-Net\0" signature) */
 bool ArtNet_ValidateHeader(const uint8_t *data);
+
+/**
+ * @brief Send a unicast reply packet to a controller
+ *
+ * Always sends to port 0x1936 (spec). If the request came from a different
+ * source port, also sends a copy there so tools that cannot bind 0x1936
+ * (e.g. the companion app next to lighting software) receive it.
+ *
+ * @param p        Packet to send; caller keeps ownership and frees it
+ * @param addr     Controller IP
+ * @param src_port UDP source port of the request being answered
+ * @note Must be called from tcpip_thread context
+ */
+void ArtNet_SendReply(struct pbuf *p, const ip_addr_t *addr, u16_t src_port);
 
 /** @brief Get next XorShift pseudo-random number */
 uint32_t ArtNet_PrngNext(void);

@@ -582,6 +582,13 @@ static int Config_ValidateCandidate(const DeviceConfig_t *config)
         return -1;
     }
 
+    // Art-Net 4: Port-Address 0 is deprecated (valid range 1-32767) for sACN
+    // compatibility. Only the first port can hit it; later ports are >= 1.
+    if (config->dmx.artnet_net == 0U && config->dmx.artnet_subnet == 0U &&
+        config->dmx.artnet_start_universe == 0U) {
+        return -1;
+    }
+
     if (config->dmx.artnet_max_refresh_rate < 44U) {
         return -1;
     }
