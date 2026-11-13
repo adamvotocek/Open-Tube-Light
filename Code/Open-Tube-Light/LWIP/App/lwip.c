@@ -29,7 +29,7 @@
 #include <string.h>
 
 /* USER CODE BEGIN 0 */
-
+#include "Device-Config/device_config.h"
 /* USER CODE END 0 */
 /* Private function prototypes -----------------------------------------------*/
 static void ethernet_link_status_updated(struct netif *netif);
@@ -77,6 +77,11 @@ void MX_LWIP_Init(void)
   GATEWAY_ADDRESS[3] = 1;
 
 /* USER CODE BEGIN IP_ADDRESSES */
+  /* Art-Net factory default 2.x.y.z / 255.0.0.0 (derived from the MAC), no
+   * gateway. Overrides the CubeMX static address above until network settings
+   * from device_config are applied at runtime (roadmap). */
+  (void)DeviceConfig_GetArtNetDefaultIp(IP_ADDRESS, NETMASK_ADDRESS);
+  memset(GATEWAY_ADDRESS, 0, sizeof(GATEWAY_ADDRESS));
 /* USER CODE END IP_ADDRESSES */
 
   /* Initialize the LwIP stack with RTOS */

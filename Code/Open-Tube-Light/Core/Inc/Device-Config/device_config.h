@@ -472,6 +472,20 @@ int DeviceConfig_RegisterCallback(DeviceConfig_ChangeCallback_t callback);
  */
 int DeviceConfig_GetMacAddress(uint8_t mac_out[DEVICE_CONFIG_MAC_LEN]);
 
+/**
+ * @brief Get this unit's Art-Net factory default IP address (Primary, 2.x.y.z)
+ *
+ * Art-Net 4 "IP address configuration - Static Addressing": A = 2,
+ * B = MAC[3] + OemHi + OemLo, C = MAC[4], D = MAC[5], mask 255.0.0.0, no
+ * gateway. Stable per unit because the MAC is derived from the MCU unique ID.
+ * Does not depend on DeviceConfig_Init() and is safe to call before it.
+ *
+ * @param ip_out   4-byte buffer, most significant byte first
+ * @param mask_out 4-byte buffer, most significant byte first
+ * @return 0 on success, -1 if a buffer is NULL
+ */
+int DeviceConfig_GetArtNetDefaultIp(uint8_t ip_out[4], uint8_t mask_out[4]);
+
 #ifdef __cplusplus
 }
 #endif

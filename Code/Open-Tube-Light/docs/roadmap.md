@@ -7,7 +7,7 @@ What is still to be built. Detailed designs for larger items live in `docs/plans
 - [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Needs reserved flash sectors, CRC32, and safe handling of an interrupted save. → `plans/device-config-refactor.md` phase 4
 - [ ] **Factory reset** from the local UI.
 - [ ] **Serialized config commits** — only `ControlTask` should commit; Art-Net and UI submit requests. → `plans/device-config-refactor.md` phases 1–3
-- [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP uses the CubeMX static IP `192.168.1.179/24`.
+- [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC (`DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE).
 
 ## Local UI (OLED + 4 buttons)
 
@@ -27,7 +27,7 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 
 - [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full; runtime-only. → `plans/device-config-refactor.md` § ArtAddress
 - [ ] **ArtTrigger locate (KeyWink)** — contract in `artnet-custom-protocol.md`.
-- [ ] **Class A (2.x.x.x) / link-local IP fallback** when no DHCP server answers, per Art-Net spec.
+- [ ] **2.x.y.z fallback when DHCP times out** — the 2.x.y.z address itself is the boot default already; needs DHCP first.
 - [ ] **BindIndex** for layouts needing more than 4 universes (currently always `bind_index = 1`).
 - [ ] **ArtPoll flags** — send ArtPollReply on change, diagnostics (ArtDiagData).
 - [ ] **ArtPollReply** — Status1 indicator / Port-Address-authority bits.

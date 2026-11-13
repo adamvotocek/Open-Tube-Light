@@ -386,6 +386,36 @@ int DeviceConfig_GetMacAddress(uint8_t mac_out[DEVICE_CONFIG_MAC_LEN])
     return 0;
 }
 
+int DeviceConfig_GetArtNetDefaultIp(uint8_t ip_out[4], uint8_t mask_out[4])
+{
+    uint8_t mac[DEVICE_CONFIG_MAC_LEN];
+
+    if (ip_out == NULL || mask_out == NULL) {
+        return -1;
+    }
+
+    (void)DeviceConfig_GetMacAddress(mac);
+
+    ip_out[0] = 2U;  // Primary Art-Net network (10 = secondary, not used)
+    ip_out[1] = (uint8_t)(mac[3] + (DEVICE_CONFIG_ARTNET_OEM_CODE >> 8) +
+                          (DEVICE_CONFIG_ARTNET_OEM_CODE & 0xFFU));
+    ip_out[2] = mac[4];
+    ip_out[3] = mac[5];
+
+    // B.C.D all 0 or all 255 would be the network / broadcast address of 2.0.0.0/8
+    if (ip_out[1] == 0U && ip_out[2] == 0U && ip_out[3] == 0U) {
+        ip_out[3] = 1U;
+    } else if (ip_out[1] == 0xFFU && ip_out[2] == 0xFFU && ip_out[3] == 0xFFU) {
+        ip_out[3] = 0xFEU;
+    }
+
+    mask_out[0] = 255U;
+    mask_out[1] = 0U;
+    mask_out[2] = 0U;
+    mask_out[3] = 0U;
+    return 0;
+}
+
 /* ========================== Private Function Implementation ========================== */
 
 /**

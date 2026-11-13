@@ -55,7 +55,7 @@ Memory placement (DTCM / non-cacheable D1 & D2 / MPU) is documented in [docs/mem
 | Setting | Default |
 |---|---|
 | Short / long name | `OpenTubeLight` / `OpenTubeLight V0.1` |
-| IP | Static `192.168.1.179/24` (set in CubeMX; `device_config` IP fields are not applied yet) |
+| IP | Art-Net default `2.x.y.z/8`, derived from the MAC (shown on the OLED); no gateway. `device_config` IP fields are not applied yet |
 | Pixels / segments / format | 144 / 144 / RGB |
 | Input source | Art-Net |
 | DMX start address | 1 |

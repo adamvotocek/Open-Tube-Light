@@ -106,7 +106,7 @@ Changes against the CubeMX default:
 
 | Setting | Value | Note |
 |---|---|---|
-| `LWIP_DHCP` | 0 | Static IP `192.168.1.179/24`, gateway `192.168.1.1` |
+| `LWIP_DHCP` | 0 | CubeMX static IP `192.168.1.179/24` is overridden in `lwip.c` USER CODE by the Art-Net default `2.x.y.z/8` (`DeviceConfig_GetArtNetDefaultIp()`), no gateway |
 | `MEM_SIZE` | 32 × 1024 | |
 | `LWIP_RAM_HEAP_POINTER` | `0x24000000` | |
 | `ETH_RX_BUFFER_CNT` | 20 | |

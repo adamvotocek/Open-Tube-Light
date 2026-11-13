@@ -158,9 +158,9 @@ The per-port commands for ports 1–3 (`0x11–0x13`, `0x21–0x23`, …) are de
 
 | Feature | Status | Implement? | Suggestion |
 |---|---|---|---|
-| Factory default IP 2.x.y.z / 255.0.0.0 from MAC + OEM (10.x.y.z alternative) | Missing | Should | New `IP_MODE_ARTNET_2X`. B = MAC[3] + OemHi + OemLo, C/D = MAC[4]/MAC[5]. Also use it as the DHCP-timeout fallback. A meaningful B byte **needs OEM**, but it works with 0xFFFF. The user guide must warn that 2.x/10.x networks must not be routed to the Internet. |
+| Factory default IP 2.x.y.z / 255.0.0.0 from MAC + OEM (10.x.y.z alternative) | Done | Should | `DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE (currently the only mode). Still to do: `IP_MODE_ARTNET_2X` in config, and use it as the DHCP-timeout fallback. A meaningful B byte **needs OEM**, but it works with 0xFFFF. The user guide must warn that 2.x/10.x networks must not be routed to the Internet. |
 | DHCP | Missing | Should | `LWIP_DHCP=1` in CubeMX. Apply `network.ip_mode` at boot. |
-| Static IP from config | Missing | Should | Apply via `netif_set_addr()` in `tcpip_thread` instead of the CubeMX constant `192.168.1.179`. |
+| Static IP from config | Missing | Should | Apply via `netif_set_addr()` in `tcpip_thread` instead of the fixed 2.x.y.z default. |
 | ArtIpProg: enquiry (Command = 0) → ArtIpProgReply | Missing | Should | Reply with the current IP, mask, gateway and DHCP bit. "Not supported" = no reply (compliant). |
 | ArtIpProg: program IP / mask / gateway, enable DHCP, reset to default | Missing | Should | Patch `network`, commit, apply live, persist. Send the reply **before** switching the address. |
 | ArtIpProg: program port | Ignored | No | Deprecated. |
