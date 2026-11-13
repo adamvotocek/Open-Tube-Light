@@ -22,6 +22,7 @@ Settings must be editable at runtime and take effect without a reboot:
 
 Menu system:
 - A full menu on the OLED replaces the 1 Hz status page and owns the display: on/off and the timeout. The OLED code moves out of `main.c` into its own module.
+- The display flush must not block `ControlTask`. Today `OledStatus_RunStep()` starts the I2C DMA transfer, then sleeps in `ssd1306_WaitForUpdate()` for about 25 ms per redraw. The menu redraws far more often than 1 Hz, and `ControlTask` also handles buttons and config requests, so start the transfer and check completion on the next loop pass instead.
 - Edits go through the same config request path as Art-Net (`ConfigService_Submit()`, `plans/config-commits-and-artaddress.md`), so validation and persistence are shared.
 - Art-Net indicator integration via `Indicator_Get()`:
   - Locate shows a flashing dot in one corner while the menu stays usable.
