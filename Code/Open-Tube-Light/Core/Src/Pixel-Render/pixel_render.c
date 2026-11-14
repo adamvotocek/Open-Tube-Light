@@ -32,9 +32,6 @@ uint32_t refresh_count = 0;
  */
 static void Pixel_Render_MapDmx(void)
 {
-    
-    
-    
     const DeviceConfig_t *cfg = DeviceConfig_Get();
     uint8_t  channels_per_segment = DeviceConfig_GetChannelsPerSegment();
     uint8_t  num_universes = DeviceConfig_GetUniverseCount();
@@ -64,12 +61,12 @@ static void Pixel_Render_MapDmx(void)
          * Subsequent universes: pixel data starts at channel 0. */
         uint16_t ch = (uni == 0) ? (cfg->dmx.dmx_start_address - 1) : 0;
 
-                /* Read one DMX logical segment sample per configured segment, then
-                 * copy that color across the physical LEDs belonging to the segment. */
-                for (; (ch + channels_per_segment) <= DMX_UNIVERSE_MAX_LENGTH &&
-                             segment_idx < cfg->layout.segment_count &&
+        /* Read one DMX logical segment sample per configured segment, then
+         * copy that color across the physical LEDs belonging to the segment. */
+        for (; (ch + channels_per_segment) <= DMX_UNIVERSE_MAX_LENGTH &&
+               segment_idx < cfg->layout.segment_count &&
                led_idx < physical_limit;
-                         ch += channels_per_segment, segment_idx++) {
+             ch += channels_per_segment, segment_idx++) {
             uint8_t red = dmx[ch];
             uint8_t green = dmx[ch + 1];
             uint8_t blue = dmx[ch + 2];
