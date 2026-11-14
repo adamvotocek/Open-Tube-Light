@@ -8,7 +8,7 @@ This is the long-range plan. Where it disagrees with a newer plan, the newer one
 |---|---|
 | Phase 1 contract cleanup | Partly done in the audit cleanup: the misleading flash, callback and "CRC32" comments are rewritten, and the unused `DeviceConfig_BuildArtNetOutputAddressList()` is gone. Still open: the checksum is not a real CRC32, and config validation still accepts RGBW/RGB16 (only ArtCommand rejects them). |
 | Phases 2–3 (commit path, side effects) | **Superseded** by `config-commits-and-artaddress.md` Phases A–B. That plan keeps `DeviceConfig_Get()` as a live pointer and publishes commits with a scheduler-locked `memcpy`. It rejects the immutable-snapshot / pointer-swap read model described below, and puts the queue in a new `config_service` module instead of `main.c`. |
-| Phase 4 (persistence) | Open. One sector (compliance 11.2) or two (below) is undecided, and so is the erase-stall policy on the single-bank H723 (`artnet-audit-followups.md` item 13). Settle both in a persistence plan before writing flash code. |
+| Phase 4 (persistence) | **Superseded by `flash-persistence.md`** (decided 2026-11-14): two-sector journal, erase only at boot, lazy de-duplicated saves. The persistence model below agrees in outline; the new plan has the details. |
 | Phase 5 (network) | Open. Now scheduled **before** RDM (`artnet-compliance.md` §12). |
 | ArtAddress section at the end | Superseded by `config-commits-and-artaddress.md` Phase C. |
 
@@ -194,7 +194,7 @@ Recommended flash layout:
   - save appends or compacts
   - no in-place overwrite dependency
 
-This fits STM32H7 flash behavior and power-loss tolerance much better than pretending a single save call is enough.
+This fits STM32H7 flash behavior and power-loss tolerance much better than pretending a single save call is enough. The detailed design (erase policy, save timing, ECC handling, data categories) is in `flash-persistence.md`.
 
 ### Network authority policy
 

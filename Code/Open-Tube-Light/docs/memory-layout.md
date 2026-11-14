@@ -16,6 +16,20 @@ Sources of truth: `Open-Tube-Light.ioc` (CubeMX: ETH, LwIP, MPU) and `STM32H723X
 
 `NOLOAD` sections are not zeroed by the startup code — zero them explicitly during init.
 
+### Flash
+
+512 KB, single bank, 4 sectors of 128 KB. Today `FLASH` spans all 512 KB. Firmware uses 92 KB (Release, `-Os`) or 162 KB (Debug, `-O0`).
+
+Planned (`plans/flash-persistence.md`):
+
+| Sector | Address | Use |
+|---|---|---|
+| 0–1 | `0x08000000` | Firmware. `FLASH` shrinks to 256 KB, so overgrowth is a link error. |
+| 2 | `0x08040000` | Settings journal, sector A |
+| 3 | `0x08060000` | Settings journal, sector B |
+
+An erase freezes all code fetch (single bank) for about 1–2 s, so the journal is erased only at boot.
+
 ### Ethernet / LwIP buffers
 
 All 32-byte aligned.

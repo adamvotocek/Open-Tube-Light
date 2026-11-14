@@ -1,13 +1,12 @@
 # Plan: serialized config commits → ArtAddress → locate
 
-Step 1 of the post-quick-wins order: `artnet-compliance.md` §12 item 2, infrastructure 11.1 and 11.8, and optionally 11.5/11.6. It implements phases 2–3 and the "ArtAddress first slice" of `device-config-refactor.md` with concrete code placement. Persistence (phase 4) is the **next** step and is out of scope here, so every change made through this path is still runtime-only.
+The config-service step of the post-quick-wins order: `artnet-compliance.md` §12 item 3, infrastructure 11.1 and 11.8, and optionally 11.5/11.6. It implements phases 2–3 and the "ArtAddress first slice" of `device-config-refactor.md` with concrete code placement. Persistence (phase 4) is the **next** step and is out of scope here, so every change made through this path is still runtime-only.
 
 **Out of scope:** flash persistence, network/DHCP, runtime input-source switching, Art-Net control plane in DMX512 mode, merge engine, sACN, RDM.
 
-**Before starting, read `artnet-audit-followups.md` items 1–3.** They change the shape of Phase B and still need a decision:
-- the control-plane split (11.4) first or alongside
-- Art-Net-owned reply slots with an opaque cookie instead of `ipv4/port/kind/hint`
-- moving the ArtCommand parser to `artnet_command.c` as a pure move commit first
+**Before starting, read `artnet-audit-followups.md` items 1–3.** They change the shape of Phase B:
+- **Decided 2026-11-14, groundwork first:** the control-plane split (11.4, item 1) and moving the ArtCommand parser to `artnet_command.c` as a pure move commit (item 3) land **before** Phase A/B.
+- Still to fold into Phase B when it is written in detail: Art-Net-owned reply slots with an opaque cookie instead of `ipv4/port/kind/hint` (item 2).
 
 OpenTubeDia's custom protocol is transitional. RDM over Art-Net replaces its config verbs after persistence and network configuration exist (roadmap), and OpenTubeDia is then deprecated. Lightkey has no RDM, so the custom verbs stay until then, but nothing in this plan extends them.
 
@@ -21,7 +20,7 @@ OpenTubeDia's custom protocol is transitional. RDM over Art-Net replaces its con
 | 2 | What "indicators" means here | The spec talks about the node's front-panel indicators. This fixture has no visible indicator LED (the board LED is debug-only and hidden on this hardware revision), so the OLED counts as the front panel. Locate is meant to find the unit, so it **also** flashes the tube. |
 | 3 | Locate pattern | Step 1: tube full white at 2 Hz (same load as `FAILSAFE_FULL`) until `AcLedNormal`; the spec has no timeout. The OLED part comes with the **menu system** (roadmap, Local UI): a flashing dot in one corner, so the menu stays usable while locating. |
 | 4 | Mute | Deferred to the menu system, which will own the display timeout. `AcLedMute` will then force the display off before the timeout. Until then `AcLedMute` is ignored and Status1 never reports mute (don't claim what isn't done). |
-| 5 | After a Port-Address / DMX address change | Keep the last frame. If nothing arrives on the new universe, the normal failsafe takes over after 5 s. |
+| 5 | After a Port-Address / DMX address change | Keep the last frame. If nothing arrives on the new universe, the normal failsafe takes over after the failsafe timeout (6 s, `artnet-audit-followups.md` item 11). |
 
 ---
 
@@ -172,7 +171,7 @@ The existing validation rejects Port-Address 0 and rollover past universe 15. Th
 | `AcLedNormal/Locate` 0x02/0x04 | Phase D | Until then: ignored. |
 | `AcLedMute` 0x03 | Menu system (roadmap) | Ignored until the menu owns the display. |
 | `AcResetRxFlags` 0x05 | tcpip_thread | NodeReport → `RcPowerOk`. |
-| `AcFailHold/Zero/Full` 0x08–0x0A | Config patch | `output.failsafe`. Runtime-only until persistence, so **Status3 bit 5 stays 0** until step 2. |
+| `AcFailHold/Zero/Full` 0x08–0x0A | Config patch | `output.failsafe`. Runtime-only until persistence, so **Status3 bit 5 stays 0** until persistence (§12 step 4, `flash-persistence.md`). |
 | `AcClearOp0` 0x90 | tcpip_thread | Zero the shadow buffers (under `shadow_mutex`), then `ArtNet_TriggerFrameOutput()` so EffectTask latches and renders black. |
 | Everything else (scene, analysis, merge, direction, ArtNetSel/AcnSel, style, RDM, deprecated port 1–3 codes) | — | Ignored. The reply shows the unchanged state, which is how a controller sees it wasn't applied. |
 
@@ -275,5 +274,5 @@ Each commit: build with only the baseline warning and an unchanged memory table 
 - **ControlTask stack (2048 B).** `ApplyPatch` puts a ~200 B candidate on the stack, and `Process` adds a ~150 B request. Watch `stack_monitor_report` after Phase B. The fix is the `.ioc` stack size: regenerate, don't hand-edit.
 - **Reply latency** for config commands: about 1 ms usually, up to about 30 ms when a request lands during the 1 Hz OLED flush (about 2.5 % of the time), because `ControlTask` sleeps until the I2C DMA transfer completes. The CPU is free meanwhile, the strip updates at commit, and controllers allow 3 s, so this is accepted until the menu system makes the flush non-blocking.
 - **`tcpip_callback` memp pool** (`MEMP_NUM_TCPIP_MSG_API` = 8) is shared with the poll-reply timer. A burst of config requests is limited by the 4-entry queue, so at most 4 + 1 messages are outstanding.
-- **AcFail\* without persistence** is reset by a reboot. That's acceptable for now; Status3 bit 5 isn't advertised until step 2.
+- **AcFail\* without persistence** is reset by a reboot. That's acceptable for now; Status3 bit 5 isn't advertised until persistence (§12 step 4).
 - **RDM and the menu system later.** Keep the indicator module and the commit path protocol-agnostic: RDM `IDENTIFY_DEVICE`, `DMX_START_ADDRESS` and `DMX_PERSONALITY` will reuse `Indicator_Set()` and `ConfigService_Submit()` unchanged, and the menu reads `Indicator_Get()` for the corner dot and mute.

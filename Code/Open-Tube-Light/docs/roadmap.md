@@ -4,10 +4,10 @@ What is still to be built. Detailed designs for larger items live in `docs/plans
 
 ## Configuration & persistence
 
-Order: serialized commits → flash persistence → network settings. Network comes before RDM (Art-Net section): it is much smaller, and today the node is fixed at 2.x.y.z/8.
+Order: Art-Net groundwork (control-plane split, decided 2026-11-14) → serialized commits → flash persistence → network settings. Network comes before RDM (Art-Net section): it is much smaller, and today the node is fixed at 2.x.y.z/8.
 
 - [ ] **Serialized config commits** — only `ControlTask` should commit; Art-Net and UI submit requests. → `plans/config-commits-and-artaddress.md` phases A–B
-- [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Needs reserved flash, CRC32, and safe handling of an interrupted save. Decide the erase-stall policy first (single-bank flash halts everything during an erase). → `plans/device-config-refactor.md` phase 4, `plans/artnet-audit-followups.md` item 13
+- [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Designed (2026-11-14): journal in the last two flash sectors, erase only at boot (an erase freezes the single-bank chip for 1–2 s), lazy de-duplicated saves, ECC-safe boot scan. → `plans/flash-persistence.md`
 - [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC (`DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE). Needs `LWIP_DHCP=1` in CubeMX, DHCP-timeout fallback to 2.x, then ArtIpProg (`artnet-compliance.md` 11.3, §7).
 - [ ] **Factory reset** from the local UI.
 
@@ -36,7 +36,7 @@ Switching input source should commit through `device_config` and restart the act
 
 Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`. Structure, robustness and process follow-ups from the November 2026 audit: `plans/artnet-audit-followups.md`. Bench regression suite: `tools/artnet_bench_test.py`.
 
-- [ ] **Art-Net control plane always on** — split the node (socket, discovery, ArtCommand/ArtAddress) from the `dmx_input` data driver. Recommended before or with the config service, so Phase E and RDM have a node that exists in every input mode (`plans/artnet-audit-followups.md` item 1).
+- [ ] **Art-Net control plane always on** — split the node (socket, discovery, ArtCommand/ArtAddress) from the `dmx_input` data driver. **Next step (decided 2026-11-14: groundwork first)**, together with moving the ArtCommand parser into `artnet_command.c`, so Phase E and RDM have a node that exists in every input mode (`plans/artnet-audit-followups.md` items 1 and 3).
 - [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full, AcCancelMerge, AcClearOp0; runtime-only. → `plans/config-commits-and-artaddress.md` phase C
 - [ ] **Locate via ArtAddress `AcLedLocate`** — tube flashes white at 2 Hz until `AcLedNormal`. Replaces the dropped custom ArtTrigger KeyWink. The OLED corner dot and `AcLedMute` come with the menu system (Local UI). Contract in `artnet-custom-protocol.md`. → `plans/config-commits-and-artaddress.md` phase D
 - [ ] **RDM responder over Art-Net** (after flash persistence and network settings; the largest planned item) — `DMX_START_ADDRESS`, `DMX_PERSONALITY` (segment count × mode), `IDENTIFY_DEVICE`, `DEVICE_LABEL`. Replaces OpenTubeDia's custom ArtCommand verbs and NodeReport fields; OpenTubeDia is then deprecated (it stays until then because Lightkey has no RDM). Later the same responder on the DMX512 line (UART5 has RS-485 DE). Design notes: `artnet-compliance.md` 11.12.
@@ -55,7 +55,7 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 
 - [ ] Re-budget task stacks and FreeRTOS heap from measured `stack_monitor_report` values (bench, under Art-Net load + ArtPoll/ArtCommand traffic); `tcpip_thread` (2048 B) is the first candidate to shrink. → `plans/memory-tuning.md`
 - [ ] Move ArtCommand parsing / config apply out of `tcpip_thread` (comes with serialized config commits).
-- [ ] Art-Net robustness follow-ups: sequence resync after a controller restart, Live Watch stats (send/alloc failures, dropped ArtDmx), NodeReport `RcParseFail` timeout, failsafe timeout ~10 s, `sys_timeout()` for the poll reply → `plans/artnet-audit-followups.md` items 7–11
+- [ ] Art-Net robustness follow-ups: sequence resync after a controller restart, Live Watch stats (send/alloc failures, dropped ArtDmx), NodeReport `RcParseFail` timeout, failsafe timeout 6 s (decided), `sys_timeout()` for the poll reply → `plans/artnet-audit-followups.md` items 7–11
 - [ ] Host-side unit tests for pure logic (ArtCommand parser, NodeReport formatter, config validation, ArtAddress decoding) → `plans/artnet-audit-followups.md` item 14
 
 ## Done

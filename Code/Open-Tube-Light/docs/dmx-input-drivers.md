@@ -19,7 +19,7 @@ How the protocol-agnostic input layer works and how to add a new source (e.g. sA
 
 | Driver | Sync between producer and `Latch()` | Producer context | Failsafe timeout |
 |---|---|---|---|
-| Art-Net | Priority-inheritance mutex around shadow buffer | `tcpip_thread` (UDP callback) | 5000 ms |
+| Art-Net | Priority-inheritance mutex around shadow buffer | `tcpip_thread` (UDP callback) | 5000 ms (6000 decided, `plans/artnet-audit-followups.md` item 11) |
 | DMX512 | Lock-free double buffer (`pending_buf[2]` + `write_idx`) | UART5 ISR, NVIC 3 — **above** BASEPRI | 1250 ms (`DMX512_FAILSAFE_TIMEOUT_MS`) |
 | sACN | — | — | 2500 ms per E1.31 |
 
