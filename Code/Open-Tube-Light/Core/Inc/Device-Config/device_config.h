@@ -2,9 +2,10 @@
  * @file device_config.h
  * @brief Device Configuration Management
  * 
- * Central configuration module for all user-configurable device settings.
- * Settings are stored in flash and can be modified at runtime via display/buttons
- * or Art-Net commands (ArtAddress, ArtIpProg, etc.).
+ * Central configuration module for all user-configurable device settings:
+ * schema, factory defaults, validation and the atomic patch/commit path
+ * (DeviceConfig_ApplyPatch). Today the only runtime writer is Art-Net
+ * ArtCommand; ArtAddress, the local UI and RDM are planned.
  * 
  * The configuration is organized into logical groups:
  * - Device identity (names)
@@ -13,11 +14,16 @@
  * - DMX/Art-Net protocol settings
  * - Failsafe behavior
  * 
- * Factory defaults are defined statically and used for initial firmware upload
- * or factory reset operations.
- * 
- * @note Settings changes take effect immediately via callback notification
- * @note Flash storage uses a dedicated flash sector to preserve settings across power cycles
+ * Factory defaults are defined statically and used on every boot until flash
+ * persistence exists, and for factory reset.
+ *
+ * @note Not persisted yet: Config_LoadFromFlash() / DeviceConfig_SaveToFlash()
+ *       are stubs, so every change is lost on reboot (roadmap).
+ * @note Readers use DeviceConfig_Get() and react to changes themselves (e.g.
+ *       pixel_render reads it every frame). The callback API is unused and
+ *       slated for removal (plans/config-commits-and-artaddress.md Phase A).
+ * @note network.* is not applied: LwIP always uses the Art-Net default
+ *       2.x.y.z/8 (DeviceConfig_GetArtNetDefaultIp).
  */
 
 #ifndef INC_DEVICE_CONFIG_H_
@@ -33,7 +39,7 @@ extern "C" {
 /* ========================== Constants ========================== */
 
 /** @brief Maximum length for device short name (Art-Net compatible: 17 chars + null) */
-#define DEVICE_CONFIG_SHORT_NAME_LEN    18
+#define DEVICE_CONFIG_PORT_NAME_LEN    18
 
 /** @brief Maximum length for device long name (Art-Net compatible: 63 chars + null) */
 #define DEVICE_CONFIG_LONG_NAME_LEN     64
@@ -135,7 +141,7 @@ typedef enum {
  * @brief Device identity configuration
  */
 typedef struct {
-    char short_name[DEVICE_CONFIG_SHORT_NAME_LEN];  ///< Short name (17 chars max)
+    char port_name[DEVICE_CONFIG_PORT_NAME_LEN];  ///< Short name (17 chars max)
     char long_name[DEVICE_CONFIG_LONG_NAME_LEN];    ///< Long name (63 chars max)
 } DeviceConfig_Identity_t;
 
@@ -206,8 +212,8 @@ typedef enum {
  * applied to a candidate configuration before validation and commit.
  */
 typedef struct {
-    bool short_name_valid;
-    char short_name[DEVICE_CONFIG_SHORT_NAME_LEN];
+    bool port_name_valid;
+    char port_name[DEVICE_CONFIG_PORT_NAME_LEN];
 
     bool long_name_valid;
     char long_name[DEVICE_CONFIG_LONG_NAME_LEN];
@@ -258,7 +264,7 @@ typedef struct {
     DeviceConfig_Dmx_t dmx;                 ///< DMX/Art-Net settings
     DeviceConfig_Output_t output;           ///< Output behavior
     
-    uint32_t checksum;                      ///< CRC32 for data integrity
+    uint32_t checksum;                      ///< Placeholder checksum (not CRC32 yet)
 } DeviceConfig_t;
 
 /**
@@ -289,8 +295,8 @@ int DeviceConfig_Init(void);
  * @brief Get read-only pointer to current configuration
  * 
  * Returns a pointer to the active configuration. This pointer remains valid
- * for the lifetime of the application. The returned structure should not be
- * modified directly; use the setter functions instead.
+ * for the lifetime of the application. The returned structure must not be
+ * modified directly; change it through DeviceConfig_ApplyPatch().
  * 
  * @return Pointer to const configuration structure
  */
@@ -339,32 +345,16 @@ uint8_t DeviceConfig_GetChannelsPerSegment(void);
 uint8_t DeviceConfig_GetUniverseCount(void);
 
 /**
- * @brief Build the active Art-Net output Port-Address list for a config
- *
- * The current runtime model only supports a contiguous output range starting
- * at `dmx.artnet_start_universe`. This helper validates that model and builds
- * the resulting 15-bit Port-Address values.
- *
- * @param config Configuration to evaluate
- * @param port_addresses Output array sized for DEVICE_CONFIG_MAX_UNIVERSES
- * @param port_count Number of valid entries written to port_addresses
- * @return 0 on success, -1 on failure
- */
-int DeviceConfig_BuildArtNetOutputAddressList(const DeviceConfig_t *config,
-                                             uint16_t *port_addresses,
-                                             uint8_t *port_count);
-
-/**
  * @brief Update device identity settings
  * 
  * Updates short and/or long name. Pass NULL to keep existing value.
- * Changes are saved to flash and callbacks are notified.
+ * Thin wrapper over DeviceConfig_ApplyPatch(persist = true).
  * 
- * @param short_name New short name (max 17 chars) or NULL to keep existing
+ * @param port_name New short name (max 17 chars) or NULL to keep existing
  * @param long_name New long name (max 63 chars) or NULL to keep existing
  * @return 0 on success, -1 on failure
  */
-int DeviceConfig_SetIdentity(const char *short_name, const char *long_name);
+int DeviceConfig_SetIdentity(const char *port_name, const char *long_name);
 
 /**
  * @brief Update network configuration
@@ -427,8 +417,8 @@ int DeviceConfig_ApplyPatch(const DeviceConfig_Patch_t *patch, bool persist,
 /**
  * @brief Reset configuration to factory defaults
  * 
- * Clears all user settings and restores factory defaults.
- * Changes are saved to flash and callbacks are notified.
+ * Clears all user settings and restores factory defaults, then requests a
+ * flash save (currently a no-op stub).
  * 
  * @return 0 on success, -1 on failure
  * 
@@ -438,10 +428,10 @@ int DeviceConfig_FactoryReset(void);
 
 /**
  * @brief Save current configuration to flash
- * 
- * Normally called automatically by setter functions. Can be called manually
- * after batch updates to minimize flash writes.
- * 
+ *
+ * Stub: returns 0 without writing anything until flash persistence is
+ * implemented. Called by commits with persist = true.
+ *
  * @return 0 on success, -1 on failure (flash write error)
  */
 int DeviceConfig_SaveToFlash(void);

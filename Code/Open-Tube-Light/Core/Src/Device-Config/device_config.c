@@ -2,29 +2,25 @@
  * @file device_config.c
  * @brief Device Configuration Management Implementation
  * 
- * Manages device configuration storage, factory defaults, and runtime updates.
- * Configuration is stored in flash for persistence across power cycles.
- * 
+ * Manages factory defaults, validation and runtime updates. Every change goes
+ * through DeviceConfig_ApplyPatch(): copy to a candidate, validate the whole
+ * candidate, then commit once.
+ *
  * @section flash Flash Storage
- * 
- * Configuration is stored in a dedicated flash sector. The STM32H7 flash
- * requires sector-based erasing, so we use a simple strategy:
- * - Read config from flash at startup
- * - Validate magic number and checksum
- * - Keep working copy in RAM
- * - Write entire config on save (erase + program)
- * 
- * TODO: Implement actual flash read/write using HAL flash functions.
- * For now, configuration is initialized to factory defaults on each boot.
- * 
+ *
+ * Not implemented: Config_LoadFromFlash() always fails and
+ * DeviceConfig_SaveToFlash() is a no-op, so factory defaults are loaded on
+ * every boot. Layout (one or two sectors, journal) and the erase stall on the
+ * single-bank H723 are open; see docs/plans/device-config-refactor.md phase 4.
+ *
  * @section callbacks Callbacks
- * 
- * Modules can register callbacks to be notified when configuration changes.
- * This allows dynamic reconfiguration without polling or restart.
+ *
+ * DeviceConfig_RegisterCallback() exists but nothing registers. It runs
+ * callbacks in the committing thread, which is the wrong-thread hazard the
+ * config service plan removes (plans/config-commits-and-artaddress.md).
  */
 
 #include "Device-Config/device_config.h"
-#include "Art-Net/artnet_protocol.h"
 #include "main.h"
 #include <stddef.h>
 #include <string.h>
@@ -48,7 +44,7 @@ static const DeviceConfig_t factory_defaults = {
     .reserved = 0,
     
     .identity = {
-        .short_name = "OpenTubeLight",
+        .port_name = "OpenTubeLight",
         .long_name = "OpenTubeLight", 
     },
     
@@ -168,32 +164,6 @@ uint8_t DeviceConfig_GetUniverseCount(void)
     return Config_GetUniverseCountFor(&active_config, NULL);
 }
 
-int DeviceConfig_BuildArtNetOutputAddressList(const DeviceConfig_t *config,
-                                             uint16_t *port_addresses,
-                                             uint8_t *port_count)
-{
-    if (config == NULL || port_addresses == NULL || port_count == NULL) {
-        return -1;
-    }
-
-    if (Config_ValidateCandidate(config) != 0) {
-        return -1;
-    }
-
-    // The current node model exposes one logical output stream that spans a
-    // contiguous Art-Net universe range. ArtAddress support builds on this
-    // helper instead of trying to represent four unrelated SwOut values.
-    uint8_t count = Config_GetUniverseCountFor(config, NULL);
-    for (uint8_t i = 0; i < count; i++) {
-        port_addresses[i] = ARTNET_BUILD_PORT_ADDRESS(config->dmx.artnet_net,
-                                                      config->dmx.artnet_subnet,
-                                                      config->dmx.artnet_start_universe + i);
-    }
-
-    *port_count = count;
-    return 0;
-}
-
 void DeviceConfig_PatchInit(DeviceConfig_Patch_t *patch)
 {
     if (patch == NULL) {
@@ -232,15 +202,15 @@ int DeviceConfig_ApplyPatch(const DeviceConfig_Patch_t *patch, bool persist,
     return Config_CommitCandidate(&candidate, local_change_mask, persist);
 }
 
-int DeviceConfig_SetIdentity(const char *short_name, const char *long_name)
+int DeviceConfig_SetIdentity(const char *port_name, const char *long_name)
 {
     DeviceConfig_Patch_t patch;
 
     DeviceConfig_PatchInit(&patch);
 
-    if (short_name != NULL) {
-        patch.short_name_valid = true;
-        Config_CopyString(patch.short_name, sizeof(patch.short_name), short_name);
+    if (port_name != NULL) {
+        patch.port_name_valid = true;
+        Config_CopyString(patch.port_name, sizeof(patch.port_name), port_name);
     }
 
     if (long_name != NULL) {
@@ -419,17 +389,17 @@ int DeviceConfig_GetArtNetDefaultIp(uint8_t ip_out[4], uint8_t mask_out[4])
 /* ========================== Private Function Implementation ========================== */
 
 /**
- * @brief Calculate CRC32 checksum for configuration data
- * 
- * Simple checksum calculation for config integrity verification.
- * Excludes the checksum field itself from calculation.
+ * @brief Calculate the config checksum (rotate-and-add, NOT CRC32)
+ *
+ * Placeholder integrity check, excludes the checksum field itself. Replace
+ * with a real CRC32 (the H7 CRC peripheral) together with flash persistence.
  * 
  * @param config Configuration to checksum
  * @return Calculated checksum value
  */
 static uint32_t Config_CalculateChecksum(const DeviceConfig_t *config)
 {
-    // Simple checksum: sum all bytes except the checksum field
+    // Rotate-and-add over all bytes except the checksum field
     const uint8_t *data = (const uint8_t *)config;
     size_t len = offsetof(DeviceConfig_t, checksum);
     
@@ -566,8 +536,8 @@ static int Config_ValidateCandidate(const DeviceConfig_t *config)
         return -1;
     }
 
-    if (Config_StringLengthBounded(config->identity.short_name,
-                                   DEVICE_CONFIG_SHORT_NAME_LEN) >= DEVICE_CONFIG_SHORT_NAME_LEN) {
+    if (Config_StringLengthBounded(config->identity.port_name,
+                                   DEVICE_CONFIG_PORT_NAME_LEN) >= DEVICE_CONFIG_PORT_NAME_LEN) {
         return -1;
     }
 
@@ -691,10 +661,10 @@ static void Config_ApplyPatchToCandidate(DeviceConfig_t *candidate,
 {
     // Each *_valid flag distinguishes "no change" from a real update whose
     // value may legitimately be zero, empty, or the current enum default.
-    if (patch->short_name_valid) {
-        Config_CopyString(candidate->identity.short_name,
-                          sizeof(candidate->identity.short_name),
-                          patch->short_name);
+    if (patch->port_name_valid) {
+        Config_CopyString(candidate->identity.port_name,
+                          sizeof(candidate->identity.port_name),
+                          patch->port_name);
     }
 
     if (patch->long_name_valid) {
@@ -748,9 +718,9 @@ static int Config_CommitCandidate(const DeviceConfig_t *candidate,
     active_config.version = DEVICE_CONFIG_VERSION;
     active_config.checksum = Config_CalculateChecksum(&active_config);
 
-    // Keep runtime commit and flash persistence as separate steps. ArtAddress
-    // can use this path in volatile mode now, and later enable persistence
-    // without having to redesign the update flow.
+    // Keep runtime commit and flash persistence as separate steps: a commit
+    // with persist = false is runtime-only (ArtCommand today), and persistence
+    // can be enabled later without redesigning the update flow.
     (void)change_mask;
     Config_NotifyCallbacks();
 
