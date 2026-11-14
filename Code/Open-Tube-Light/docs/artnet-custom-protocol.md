@@ -118,4 +118,4 @@ Planned with the OLED menu system (roadmap, Local UI):
 
 The board LED is debug-only and not visible on this hardware revision, so it is not used. RDM `IDENTIFY_DEVICE` will drive the same locate state once RDM exists.
 
-Design and status: `plans/config-commits-and-artaddress.md` Phase D (local only). Implementation will be `Indicator_Set()` (state) and `Pixel_Render_Locate()` (tube); the menu system will read `Indicator_Get()`.
+Design and status: `plans/config-commits-and-artaddress.md` Phase D. Implementation will be `Indicator_Set()` (state) and `Pixel_Render_Locate()` (tube); the menu system will read `Indicator_Get()`.

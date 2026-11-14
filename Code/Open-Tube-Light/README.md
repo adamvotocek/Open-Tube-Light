@@ -88,4 +88,6 @@ Presets: `Debug`, `Release`. User sources are listed in the root `CMakeLists.txt
 | [docs/artnet-custom-protocol.md](docs/artnet-custom-protocol.md) | Companion-app contract (transitional until RDM): NodeReport format, custom ArtCommands, locate via ArtAddress |
 | [docs/artnet-compliance.md](docs/artnet-compliance.md) | Art-Net 4 feature matrix: implemented / planned / not applicable, infrastructure prerequisites |
 | [docs/roadmap.md](docs/roadmap.md) | Planned features and open TODOs |
+| [docs/plans/](docs/plans/) | Design plans for larger roadmap items (`completed/` holds finished ones) |
+| [tools/artnet_bench_test.py](tools/artnet_bench_test.py) | Art-Net bench regression test against a running fixture (standard-library Python) |
 | [docs/issues.md](docs/issues.md) | Open and solved hardware-observed bugs |

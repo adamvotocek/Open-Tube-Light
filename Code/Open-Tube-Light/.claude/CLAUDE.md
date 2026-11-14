@@ -17,7 +17,8 @@ cube-cmake --build --preset Debug  # Build -> build/Debug/Open-Tube-Light.elf
 * **Verification Criteria:** There are no unit tests. A valid change must:
   1. Build cleanly with zero *new* compiler warnings (baseline: one existing `-Wunused-function` for `Config_ValidateFlash`).
   2. Fit within the linker memory-region table printed at build end (`RAM_D1_LWIP` is ~98% full by design).
-* **Hardware Testing:** Flashing/debugging is done by the user via ST-Link. When a change requires bench verification, explicitly state what to test and which Live Watch counters to monitor (`render_count`/`failsafe_count`/`refresh_count` in `pixel_render.c`; `receivedData`/`smallFrameCnt`/`midPcktErrCnt` in `dmx512_uart.c`; `stack_monitor_report` (per-task min free stack, heap low-water mark) and `stack_monitor_overflow` in `stack_monitor.c`).
+* **Art-Net bench suite:** `tools/artnet_bench_test.py` (standard-library Python, run by the user against the fixture). Every Art-Net change keeps it passing and extends it for new behaviour.
+* **Hardware Testing:** Flashing/debugging is done by the user via ST-Link. When a change requires bench verification, explicitly state what to test and which Live Watch counters to monitor (`render_count`/`failsafe_count`/`refresh_count` in `pixel_render.c`; `receivedData`/`smallFrameCnt`/`midPcktErrCnt` in `dmx512_uart.c`; `artnet_ignored_count` in `artnet.c`; `stack_monitor_report` (per-task min free stack, heap low-water mark) and `stack_monitor_overflow` in `stack_monitor.c`).
 
 ## CubeMX & Linker Boundaries
 
@@ -53,7 +54,7 @@ Always verify execution context before calling RTOS or LwIP APIs:
 | --- | --- | --- |
 | **UART5 ISR** | NVIC 3 (Above `configMAX_SYSCALL_INTERRUPT_PRIORITY` = 5) | Runs `DMX512_Uart_IRQHandler`. **NEVER call FreeRTOS APIs here.** Defer notifications by software-pending `DMA1_Stream1_IRQn` (`DMX512_Uart_DeferredNotify()`). Keep execution ultra-short. |
 | **DMA/SPI/I2C ISRs** | NVIC 5 | HAL callbacks, `SK9822_OnTxComplete`. Non-blocking `osThreadFlagsSet` is allowed. |
-| **`tcpip_thread`** | LwIP (2048B stack) | Runs Art-Net UDP callbacks & handlers. **Only context allowed to call raw LwIP APIs.** Other threads must use `tcpip_callback()`. Watch stack usage (no large stack buffers or heavy `snprintf`). |
+| **`tcpip_thread`** | LwIP (2048B stack) | Runs Art-Net UDP callbacks & handlers. **Only context allowed to call raw LwIP APIs.** Other threads must use `tcpip_callback()` or hold `LOCK_TCPIP_CORE()` (as `ArtNet_Init/Deinit` do). Watch stack usage (no large stack buffers or heavy `snprintf`). |
 | **`ControlTask`** | BelowNormal | Control plane: `MX_LWIP_Init`, input driver init, 1 Hz OLED refresh, config commits, UI. |
 | **`EffectTask`** | AboveNormal | Real-time render path. Waits on flag `0x01` (150 ms timeout) after `ControlTask` sets start flag `0x02`. **Never mutate config here.** |
 
@@ -86,11 +87,16 @@ All documentation lives in `docs/` — never put `.md` files in `Core/` or other
   * `Art-Net_4.md` (~330 KB): **Grep for specific opcodes/sections; NEVER read the whole file into context.**
   * `dmx512-A.md`: ANSI E1.11 §8–9 timings and packet layout.
   * `protocol-failsafes.md`, ST manuals (`UM2217` HAL/LL, `UM1713` LwIP) as PDFs.
-* **`docs/plans/`** (gitignored): design drafts. `device-config-refactor.md` (config ownership, persistence, ArtAddress), `memory-tuning.md` (stacks, `snprintf` in `tcpip_thread`).
+* **`docs/plans/`** : design plans; finished ones move to `completed/`. Where plans disagree, the newer, more specific one wins, and the older one gets a status note.
+  * `config-commits-and-artaddress.md`: **next step**. Config service, ArtAddress, locate.
+  * `artnet-audit-followups.md`: open audit findings (control-plane split, reply slots, robustness, host tests, persistence erase stall).
+  * `device-config-refactor.md`: long-range config plan (persistence, network). Phases 2–3 are superseded.
+  * `memory-tuning.md`: stacks, `tcpip_thread` load.
 * **Tracked docs:**
+  * `docs/artnet-compliance.md`: Art-Net 4 feature matrix, infrastructure prerequisites (§11) and implementation order (§12).
   * `docs/artnet-custom-protocol.md`: contract with the companion app OpenTubeDia (NodeReport format, `ArtCommand` verbs, locate via ArtAddress). Transitional. Change it together with the firmware.
   * `docs/dmx-input-drivers.md`: input driver vtable and how to add a protocol.
   * `docs/memory-layout.md`: RAM regions, linker sections, MPU/ETH/LwIP CubeMX settings.
   * `docs/roadmap.md`: stubs and planned features. `docs/issues.md`: open/solved bench-observed bugs.
-* **Before multi-file feature work or debugging**, read `docs/roadmap.md` and `docs/issues.md`. Key gaps: config is never saved to flash, `ArtNet_HandleArtAddress` is a stub, locate (`AcLedLocate`)/RDM/sACN/RGBW/RGB16 are not implemented, and `device_config` network fields are not applied (LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC, overriding the CubeMX static IP in `lwip.c` USER CODE).
+* **Before multi-file feature work or debugging**, read `docs/roadmap.md` and `docs/issues.md` (and for Art-Net, the relevant plan above). Key gaps: config is never saved to flash, `ArtNet_HandleArtAddress` is a stub, locate (`AcLedLocate`)/RDM/sACN/RGBW/RGB16 are not implemented, and `device_config` network fields are not applied (LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC, overriding the CubeMX static IP in `lwip.c` USER CODE).
 * **Keep docs current:** when a change completes a roadmap item, fixes an issue, or alters something a doc describes, update that doc in the same change.

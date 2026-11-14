@@ -1,6 +1,8 @@
 # Art-Net 4 Compliance Matrix 
 
-Every feature of the Art-Net 4 specification (`docs/reference/Art-Net_4.md`, rev. DP), checked against the firmware as of commit `12eacf9` plus the Art-Net quick-wins change. OEM and ESTA codes are out of scope for now. Features that depend on them are marked **needs OEM/ESTA**.
+Every feature of the Art-Net 4 specification (`docs/reference/Art-Net_4.md`, rev. DP), checked against the firmware after the quick wins, the 2.x.y.z default IP and the November 2026 audit cleanup. OEM and ESTA codes are out of scope for now. Features that depend on them are marked **needs OEM/ESTA**. Open audit findings that are not spec rows (structure, robustness, process) are in `plans/artnet-audit-followups.md`.
+
+Bench regression suite: `tools/artnet_bench_test.py`. When a row turns Done, extend it (or name the bench check) so the row has evidence.
 
 Coverage was rechecked by grepping every *shall / must / should / not allowed* statement in the spec. Requirements that apply only to controllers are listed in section 13 so it is clear they were considered. The opcode table in the markdown conversion is incomplete: `OpIpProg` = 0xF800 and `OpRdmSub` = 0x8400 come from the official spec.
 
@@ -56,7 +58,7 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 | Never send to the limited broadcast 255.255.255.255 | 🟢 Done | 🟪 Must | Only unicast today. Future ArtDiagData broadcast must use the directed broadcast of the netif subnet. |
 | Port-Address 0 is deprecated (valid range 1–32767) | 🟢 Done | 🟦 Should | `Config_ValidateCandidate` rejects `0:0:0`. The default is universe 1. |
 | One Net, one Sub-Net and one Universe "switch" per port (hard or soft) | 🟡 Partial | 🟪 Must | They exist as config fields, but nothing can change them at runtime: no UI, ArtAddress is a stub, and ArtCommand doesn't touch them. Fixed by ArtAddress plus the local UI. |
-| Failsafe timeout longer than the 4 s ArtDmx keep-alive | 🟢 Done | 🟪 Must | 5 s (`ARTNET_DISCONNECT_TIMEOUT_MS`). A controller with static data may resend only every 4 s. |
+| Failsafe timeout longer than the 4 s ArtDmx keep-alive | 🟢 Done | 🟪 Must | 5 s (`ARTNET_FAILSAFE_TIMEOUT_MS`, ≥ `ARTNET_DISCONNECT_TIMEOUT_MS` by static assert). A controller with static data may resend only every 4 s, so 5 s tolerates no lost keep-alive; raising it to ~10 s is open (`plans/artnet-audit-followups.md` item 11). |
 | Do not ship DMX-Workshop / Art-Net SDK code | 🟢 Done | 🟪 Must | The SDK is copyright Singularity (UK) Ltd. Nothing from it is used. Copying OEM code *numbers* is fine. |
 | User-guide credit "Art-Net™ Designed by and Copyright Artistic Licence" | 🟢 Done | 🟪 Must | In the repo-root `README.md`, "Art-Net" section. Move it into the user guide when one exists. |
 | Status display (Power / Com / DMX indicators, 6 s timeout) | 🔴 Missing | ⬜ Nice | OLED: "Com" icon when any Art-Net packet arrived in the last 6 s; per-universe "receiving" marks. |
@@ -65,7 +67,7 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 
 | Feature | Status | Implement? | Suggestion |
 |---|---|---|---|
-| Reply with ArtPollReply, random 0–1 s delay | 🟢 Done | 🟪 Must | The delay applies to ArtPoll only (it exists to spread replies to a broadcast poll). ArtAddress and ArtInput are unicast acknowledgements and are answered immediately; an immediate reply cancels the queued poll reply it covers. |
+| Reply with ArtPollReply, random 0–1 s delay | 🟢 Done | 🟪 Must | The PRNG is seeded per unit (boot tick mixed with the UID-derived MAC), so fixtures powered up together don't pick the same delay. The delay applies to ArtPoll only (it exists to spread replies to a broadcast poll). ArtAddress and ArtInput are unicast acknowledgements and are answered immediately; an immediate reply cancels the queued poll reply it covers. |
 | Unicast reply (broadcast not allowed in Art-Net 4) | 🟢 Done | 🟪 Must | — |
 | Accept ArtPoll ≥ 14 bytes, missing fields = 0 | 🟢 Done | 🟪 Must | — |
 | Multiple controllers polling in the same window | 🟢 Done | 🟪 Must | Queue of 4, deduplicated by IP + port: a poll from 0x1936 and one from an ephemeral port on the same PC share one entry, which then replies to both ports. |
@@ -132,7 +134,7 @@ Section 10 lists the minimum set. In practice, conformance is checked with Artis
 
 ## 6. Remote configuration — ArtAddress (0x6000)
 
-The handler is a stub that replies `RcConfigErr` (roadmap: first slice in `plans/device-config-refactor.md`). Replying with an ArtPollReply is already correct. The node must always reply with its *resulting* state.
+The handler is a stub that replies `RcConfigErr` (first slice: `plans/config-commits-and-artaddress.md` Phase C/D). Replying with an ArtPollReply is already correct. The node must always reply with its *resulting* state.
 
 The per-port commands for ports 1–3 (`0x11–0x13`, `0x21–0x23`, …) are deprecated in Art-Net 4. All universes of this fixture form one logical stream, so apply the port-0 variant to every port and ignore the deprecated codes.
 
@@ -218,9 +220,9 @@ Everything else (merge, DHCP/2.x, ArtIpProg, diagnostics, DataRequest, sACN sele
 | # | Change | Unlocks | Notes |
 |---|---|---|---|
 | 11.1 | **Serialized config commits** — `tcpip_thread` posts a request, `ControlTask` validates/commits/persists, then `tcpip_callback()` sends the ArtPollReply | ArtAddress, ArtIpProg, ArtCommand off `tcpip_thread` | Roadmap item. Keep the reply destination in the request. |
-| 11.2 | **Flash persistence** — reserve the last 128 KB sector, shrink `FLASH` in `STM32H723XX_FLASH.ld`, real CRC32 | Retained names, Port-Address, failsafe, merge mode, failsafe scene, IP | H723 is single-bank: erase/program stalls code fetch from the same bank. Save from `ControlTask`, debounce (about 2 s after the last change), accept a short render stall. Update `memory-layout.md`. |
+| 11.2 | **Flash persistence** — reserve the last 128 KB sector (or two, open), shrink `FLASH` in `STM32H723XX_FLASH.ld`, real CRC32 | Retained names, Port-Address, failsafe, merge mode, failsafe scene, IP | H723 is single-bank: a 128 KB sector erase stalls all code fetch, interrupts included, for on the order of a second, which is not a "short" stall. Decide first: append-only journal with erase only at boot / factory reset (recommended), or erase only while output is idle. See `plans/artnet-audit-followups.md` item 13 and `plans/device-config-refactor.md` phase 4. Save from `ControlTask`, debounce (about 2 s after the last change). Update `memory-layout.md`. |
 | 11.3 | **Runtime network config** — `LWIP_DHCP=1` (CubeMX), apply `ip_mode`/static/2.x after `MX_LWIP_Init()` in a USER CODE block, DHCP-timeout fallback to 2.x, `LWIP_NETIF_STATUS_CALLBACK=1` | DHCP, 2.x default, ArtIpProg, correct Status2 | All `netif` calls in `tcpip_thread`. Extend the `DeviceConfig_IpMode_t` enum and its validation. |
-| 11.4 | **Art-Net control plane always on** — split `artnet.c` into a control part (PCB, ArtPoll/PollReply, ArtAddress, ArtIpProg, ArtCommand, ArtDataRequest; started once at boot) and a data part (ArtDmx/ArtSync/buffers; the `dmx_input` driver) | Discovery and config in DMX512/sACN mode, AcArtNetSel/AcAcnSel | In DMX512 mode, report NumPorts = 0 (or GoodOutputA.7 = 0) so controllers don't unicast unused ArtDmx. Roadmap item. |
+| 11.4 | **Art-Net control plane always on** — split `artnet.c` into a control part (PCB, ArtPoll/PollReply, ArtAddress, ArtIpProg, ArtCommand, ArtDataRequest; started once at boot) and a data part (ArtDmx/ArtSync/buffers; the `dmx_input` driver) | Discovery and config in DMX512/sACN mode, AcArtNetSel/AcAcnSel | In DMX512 mode, report NumPorts = 0 (or GoodOutputA.7 = 0) so controllers don't unicast unused ArtDmx. Recommended before or with 11.1: Phase E and RDM then have a node that always exists, and the socket is never torn down at runtime (`plans/artnet-audit-followups.md` item 1). |
 | 11.5 | **Controller registry** — IP, ArtPoll flags, DiagPriority, last-poll tick | Flags bit 1 (reply on change), ArtDiagData routing | Small static table in `g_artnet_ctx`. Expire after about 10 s. |
 | 11.6 | **Node-change events** — hook the `DeviceConfig` change mask plus Art-Net events (merge, locate, source change, IP change) to "send ArtPollReply to subscribers" | Flags bit 1, SwMacro-style updates | Reuse `DEVICE_CONFIG_CHANGE_*` flags. |
 | 11.7 | **Merge engine** — 2 source slots per universe keyed by (IP, Physical), per-source buffers (2 × 4 × 512 B ≈ 4 KB DTCM), HTP/LTP per port, 10 s source timeout | Merge, AcMerge*, AcCancelMerge, GoodOutputA bits 3/1, ArtSync-ignore-while-merging | Merge into the shadow buffer in `tcpip_thread` (cheap for ≤ 4 universes). The merge mode is persisted config. |
@@ -233,11 +235,11 @@ Everything else (merge, DHCP/2.x, ArtIpProg, diagnostics, DataRequest, sACN sele
 ## 12. Suggested order
 
 1. ~~**Quick fixes, no infrastructure:** section 10 items 1–2; Status1 indicator = 11 (normal); ArtInput → ArtPollReply; ArtDataRequest.~~ Done.
-2. **11.1 → ArtAddress** first slice (runtime-only), with 11.8 for AcLed*/AcClearOp0, plus 11.5/11.6 for Flags bit 1. Plan: `plans/config-commits-and-artaddress.md`.
+2. **11.1 → ArtAddress** first slice (runtime-only), with 11.8 for AcLed*/AcClearOp0, plus 11.5/11.6 for Flags bit 1. Plan: `plans/config-commits-and-artaddress.md`. Consider doing **11.4 control-plane split** first or alongside (`plans/artnet-audit-followups.md` item 1).
 3. **11.2 persistence**, then AcFail* is fully compliant and Status3 bit 5 can be set.
-4. **11.12 RDM responder over Art-Net**, then deprecate OpenTubeDia and its custom verbs. RDM on the DMX512 line can follow with the same core.
-5. **11.3 network**, then ArtIpProg.
-6. **11.4 control-plane split.**
+4. **11.3 network** (DHCP, static IP from config, 2.x fallback), then ArtIpProg. Before RDM: the node is fixed at 2.x.y.z/8 today, and this is much smaller than RDM.
+5. **11.12 RDM responder over Art-Net**, then deprecate OpenTubeDia and its custom verbs. RDM on the DMX512 line can follow with the same core. This is the largest item on the list.
+6. **11.4 control-plane split**, if not already done in step 2.
 7. **11.7 merge engine** and ArtDiagData.
 8. **11.10 sACN** + AcArtNetSel0/AcAcnSel0. Later, with OEM: ArtTrigger OEM keys.
 

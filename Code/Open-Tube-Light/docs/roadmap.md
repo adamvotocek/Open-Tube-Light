@@ -1,13 +1,15 @@
 # Roadmap
 
-What is still to be built. Detailed designs for larger items live in `docs/plans/` (local only).
+What is still to be built. Detailed designs for larger items live in `docs/plans/`.
 
 ## Configuration & persistence
 
-- [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Needs reserved flash sectors, CRC32, and safe handling of an interrupted save. → `plans/device-config-refactor.md` phase 4
-- [ ] **Factory reset** from the local UI.
+Order: serialized commits → flash persistence → network settings. Network comes before RDM (Art-Net section): it is much smaller, and today the node is fixed at 2.x.y.z/8.
+
 - [ ] **Serialized config commits** — only `ControlTask` should commit; Art-Net and UI submit requests. → `plans/config-commits-and-artaddress.md` phases A–B
-- [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC (`DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE).
+- [ ] **Flash persistence** — `Config_LoadFromFlash()` / `DeviceConfig_SaveToFlash()` are stubs, the checksum is not a real CRC32, factory defaults are not written on first boot. Needs reserved flash, CRC32, and safe handling of an interrupted save. Decide the erase-stall policy first (single-bank flash halts everything during an erase). → `plans/device-config-refactor.md` phase 4, `plans/artnet-audit-followups.md` item 13
+- [ ] **Apply network settings from config** — `network.ip_mode` / static IP in `device_config` are not applied; LwIP always uses the Art-Net default `2.x.y.z/8` derived from the MAC (`DeviceConfig_GetArtNetDefaultIp()`, applied in `lwip.c` USER CODE). Needs `LWIP_DHCP=1` in CubeMX, DHCP-timeout fallback to 2.x, then ArtIpProg (`artnet-compliance.md` 11.3, §7).
+- [ ] **Factory reset** from the local UI.
 
 ## Local UI (OLED + 4 buttons)
 
@@ -32,16 +34,16 @@ Switching input source should commit through `device_config` and restart the act
 
 ## Art-Net
 
-Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`.
+Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`. Structure, robustness and process follow-ups from the November 2026 audit: `plans/artnet-audit-followups.md`. Bench regression suite: `tools/artnet_bench_test.py`.
 
+- [ ] **Art-Net control plane always on** — split the node (socket, discovery, ArtCommand/ArtAddress) from the `dmx_input` data driver. Recommended before or with the config service, so Phase E and RDM have a node that exists in every input mode (`plans/artnet-audit-followups.md` item 1).
 - [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full, AcCancelMerge, AcClearOp0; runtime-only. → `plans/config-commits-and-artaddress.md` phase C
 - [ ] **Locate via ArtAddress `AcLedLocate`** — tube flashes white at 2 Hz until `AcLedNormal`. Replaces the dropped custom ArtTrigger KeyWink. The OLED corner dot and `AcLedMute` come with the menu system (Local UI). Contract in `artnet-custom-protocol.md`. → `plans/config-commits-and-artaddress.md` phase D
-- [ ] **RDM responder over Art-Net** (after flash persistence) — `DMX_START_ADDRESS`, `DMX_PERSONALITY` (segment count × mode), `IDENTIFY_DEVICE`, `DEVICE_LABEL`. Replaces OpenTubeDia's custom ArtCommand verbs and NodeReport fields; OpenTubeDia is then deprecated (it stays until then because Lightkey has no RDM). Later the same responder on the DMX512 line (UART5 has RS-485 DE). Design notes: `artnet-compliance.md` 11.12.
+- [ ] **RDM responder over Art-Net** (after flash persistence and network settings; the largest planned item) — `DMX_START_ADDRESS`, `DMX_PERSONALITY` (segment count × mode), `IDENTIFY_DEVICE`, `DEVICE_LABEL`. Replaces OpenTubeDia's custom ArtCommand verbs and NodeReport fields; OpenTubeDia is then deprecated (it stays until then because Lightkey has no RDM). Later the same responder on the DMX512 line (UART5 has RS-485 DE). Design notes: `artnet-compliance.md` 11.12.
 - [ ] **2.x.y.z fallback when DHCP times out** — the 2.x.y.z address itself is the boot default already; needs DHCP first.
 - [ ] **BindIndex** for layouts needing more than 4 universes (currently always `bind_index = 1`).
 - [ ] **ArtPoll flags** — send ArtPollReply on change, diagnostics (ArtDiagData).
 - [ ] **ArtPollReply** — Status1 indicator / Port-Address-authority bits.
-- [ ] **Art-Net control plane while in DMX512 mode** — today Art-Net (discovery, ArtCommand) only runs when it is the input source.
 
 ## Input & rendering
 
@@ -53,10 +55,14 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 
 - [ ] Re-budget task stacks and FreeRTOS heap from measured `stack_monitor_report` values (bench, under Art-Net load + ArtPoll/ArtCommand traffic); `tcpip_thread` (2048 B) is the first candidate to shrink. → `plans/memory-tuning.md`
 - [ ] Move ArtCommand parsing / config apply out of `tcpip_thread` (comes with serialized config commits).
+- [ ] Art-Net robustness follow-ups: sequence resync after a controller restart, Live Watch stats (send/alloc failures, dropped ArtDmx), NodeReport `RcParseFail` timeout, failsafe timeout ~10 s, `sys_timeout()` for the poll reply → `plans/artnet-audit-followups.md` items 7–11
+- [ ] Host-side unit tests for pure logic (ArtCommand parser, NodeReport formatter, config validation, ArtAddress decoding) → `plans/artnet-audit-followups.md` item 14
 
 ## Done
 
-- [x] Art-Net quick wins (`artnet-compliance.md` §12 step 1): unhandled opcodes dropped silently (`artnet_ignored_count`), replies to 0x1936 + requester's source port, GoodOutputA only while data is fresh, Status1 indicators = normal, Port-Address 0 rejected, ArtInput and ArtDataRequest (URLs) answered, credit line + merge policy in the repo-root README — bench-verified with `Temporary_Tests/python_artnet_scripts/artnet_quickwins_test.py` (57/57) and Lightkey
+- [x] Plans tracked in git; bench script in `tools/`; LwIP core lock around Art-Net PCB setup/teardown; per-unit ArtPollReply delay seed; poll-reply timer failure no longer wedges replies; chained pbufs dropped; shared `DMX_INPUT_FLAG_FRAME_READY`; unused `DeviceConfig_BuildArtNetOutputAddressList()` removed; stale comments rewritten (`plans/artnet-audit-followups.md`, "Done in the cleanup commit") — bench-verified: `tools/artnet_bench_test.py` 57/57 with Lightkey streaming
+
+- [x] Art-Net quick wins (`artnet-compliance.md` §12 step 1): unhandled opcodes dropped silently (`artnet_ignored_count`), replies to 0x1936 + requester's source port, GoodOutputA only while data is fresh, Status1 indicators = normal, Port-Address 0 rejected, ArtInput and ArtDataRequest (URLs) answered, credit line + merge policy in the repo-root README — bench-verified with `tools/artnet_bench_test.py` (then `artnet_quickwins_test.py`, 57/57) and Lightkey
 - [x] ArtPoll reply queue de-duplicated per IP + port, so a tool on the same PC as the lighting software no longer loses poll replies (seen on the bench: every few polls swallowed while Lightkey ran) — bench-verified: 0 swallowed polls with Lightkey on the same PC
 
 - [x] Stack overflow hook records the task (`stack_monitor_overflow`) and halts at a breakpoint; per-task stack + heap high-water marks in `stack_monitor_report` (1 Hz) — watermarks bench-verified (all tasks have safe headroom); overflow halt not yet triggered on purpose

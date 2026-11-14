@@ -15,7 +15,7 @@ How the protocol-agnostic input layer works and how to add a new source (e.g. sA
 
 - **Consumers:** `EffectTask` calls `DMX_Input_Latch()` once per frame, then `pixel_render.c` reads data via `DMX_Input_GetUniverse()`.
 - **Manager** (`dmx_input.c`) resolves the driver from `config->dmx.input_source` and dispatches through the vtable. With no active driver, `DMX_Input_GetFailsafeTimeout()` returns a conservative 12000 ms.
-- **Each driver** owns its buffers, its synchronisation and its transport, and wakes `EffectTask` with thread flag `0x01` when a new frame is ready.
+- **Each driver** owns its buffers, its synchronisation and its transport, and wakes `EffectTask` with thread flag `DMX_INPUT_FLAG_FRAME_READY` (`dmx_input.h`) when a new frame is ready.
 
 | Driver | Sync between producer and `Latch()` | Producer context | Failsafe timeout |
 |---|---|---|---|
@@ -94,10 +94,10 @@ osMutexAcquire(shadow_mutex, osWaitForever);
 memcpy(shadow_buf[universe_idx], incoming_data, len);
 osMutexRelease(shadow_mutex);
 
-osThreadFlagsSet(notify_task, 0x01);  // frame ready
+osThreadFlagsSet(notify_task, DMX_INPUT_FLAG_FRAME_READY);
 ```
 
-- **Network (LwIP):** the UDP receive callback already runs in `tcpip_thread`; writing the shadow buffer there is fine.
+- **Network (LwIP):** the UDP receive callback already runs in `tcpip_thread`; writing the shadow buffer there is fine. `init`/`deinit` run in `ControlTask`, so wrap raw LwIP calls there (`udp_new`, `udp_bind`, `udp_remove`, …) in `LOCK_TCPIP_CORE()` / `UNLOCK_TCPIP_CORE()`, as `ArtNet_Init()` does.
 - **ISR at or below BASEPRI (NVIC ≥ 5):** no mutex — use a lock-free double buffer; `osThreadFlagsSet` is allowed.
 - **ISR above BASEPRI (NVIC < 5, e.g. UART5 at 3):** no FreeRTOS calls at all. Copy the DMX512 pattern: lock-free double buffer plus a software-pended lower-priority IRQ that performs the notify (`DMX512_Uart_DeferredNotify()`).
 
@@ -120,7 +120,8 @@ Add the `.c` file to `target_sources` in the root `CMakeLists.txt`.
 | Clean up on partial init failure | No runtime `malloc`; leaked RTOS objects can't be recovered |
 | `deinit` zeros buffers | Lights go dark on protocol switch |
 | Correct `failsafe_timeout_ms` | `EffectTask` uses it to detect a lost controller |
-| LwIP calls from non-tcpip threads via `tcpip_callback()` | LwIP core is not thread-safe |
+| LwIP calls from non-tcpip threads under `LOCK_TCPIP_CORE()` or via `tcpip_callback()` | LwIP core is not thread-safe |
+| Never call `deinit` while `EffectTask` can be in `latch()` | `deinit` deletes the mutex `latch` takes; runtime switching must quiesce `EffectTask` first (`plans/artnet-audit-followups.md` item 12) |
 | Universe count from `DeviceConfig_GetUniverseCount()` | Derived from segment count, format and start address |
 
 ## Config values relevant to drivers (`DeviceConfig_Get()`)

@@ -46,7 +46,7 @@ Bug log for hardware-observed problems. Newest open issues first; move entries t
 
 **Symptom (with DHCP enabled).** Works on the home network. If moved to a direct cable to the laptop while running, it keeps working; after a reset on the direct link, it is not discoverable. Laptop: static 192.168.1.2/24, router 192.168.1.3.
 
-**Fix.** Firmware uses a static IP (`192.168.1.179/24`, `LWIP_DHCP=0`); a direct connection after a cold reset works on the bench. The remaining unreachability was caused by the laptop's network setup, not the firmware. DHCP with fallback to Art-Net 2.x.x.x / link-local stays on the roadmap.
+**Fix.** Firmware switched to a static IP (`LWIP_DHCP=0`); a direct connection after a cold reset works on the bench. The remaining unreachability was caused by the laptop's network setup, not the firmware. The static address was then `192.168.1.179/24`; since commit `7cff726` it is the Art-Net default `2.x.y.z/8` derived from the MAC (shown on the OLED), so the laptop needs an address in 2.0.0.0/8. DHCP with fallback to 2.x.y.z stays on the roadmap.
 
 ### Random flashes at the start of the strip
 
