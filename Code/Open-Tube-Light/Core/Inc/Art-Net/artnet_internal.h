@@ -25,11 +25,23 @@ extern "C" {
 
 /* ========================== Internal Constants ========================== */
 
-/** @brief Thread notification flag for new DMX frame ready */
-#define ARTNET_THREAD_FLAG_FRAME_READY  0x01
+/**
+ * @brief Art-Net failsafe timeout reported to dmx_input (ms)
+ *
+ * Must exceed the 4 s ArtDmx keep-alive of a controller sending static data,
+ * and must not be shorter than the disconnect timeout, so the source lock is
+ * released by the time failsafe kicks in.
+ */
+#define ARTNET_FAILSAFE_TIMEOUT_MS  5000U
+
+_Static_assert(ARTNET_DISCONNECT_TIMEOUT_MS <= ARTNET_FAILSAFE_TIMEOUT_MS,
+               "Source lock must expire no later than failsafe");
 
 /** @brief Max queued ArtPollReply destinations (supports multiple controllers) */
 #define ARTNET_MAX_PENDING_REPLIES  4
+
+/** @brief Retry delay when the delayed ArtPollReply can't be handed to tcpip_thread (ms) */
+#define ARTNET_POLL_REPLY_RETRY_MS  10U
 
 /** @brief Maximum length of the free-form detail stored for NodeReport */
 #define ARTNET_NODE_REPORT_DETAIL_MAX  24
@@ -74,8 +86,9 @@ typedef struct {
 /**
  * @brief Art-Net module internal context
  * 
- * Contains all internal state for the Art-Net implementation.
- * This structure consolidates previously scattered global variables.
+ * Contains all internal state for the Art-Net implementation. Everything
+ * except the shadow buffers (shadow_mutex) is only touched in tcpip_thread,
+ * or under the LwIP core lock in ArtNet_Init/Deinit.
  */
 typedef struct {
     // Per-universe state (source tracking, sync, timing)
@@ -198,7 +211,7 @@ uint32_t ArtNet_PrngNext(void);
 /**
  * @brief Notify the processing task that new data is available
  * 
- * Sets the ARTNET_THREAD_FLAG_FRAME_READY thread flag on the processing task.
+ * Sets DMX_INPUT_FLAG_FRAME_READY on the processing task.
  */
 void ArtNet_TriggerFrameOutput(void);
 

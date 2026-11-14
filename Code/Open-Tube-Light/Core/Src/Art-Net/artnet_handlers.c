@@ -7,7 +7,7 @@
  * - ArtPoll: Discovery request handling
  * - ArtCommand: Custom runtime configuration commands
  * - ArtSync: Per-universe frame synchronization
- * - ArtAddress: Remote configuration (future)
+ * - ArtAddress: stub, replies RcConfigErr (plans/config-commits-and-artaddress.md)
  * - ArtInput: Replies with ArtPollReply (node has no inputs)
  * - ArtDataRequest: Product / user guide / support URLs via ArtDataReply
  *
@@ -99,7 +99,7 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     }
     
     // Verify packet contains advertised data
-    if (len < (18 + dmx_len)) {
+    if (len < (ARTNET_DMX_HEADER_LENGTH + dmx_len)) {
         ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
                              "ArtDmx Truncated");
         return;
@@ -124,7 +124,7 @@ void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr
     // Check if this universe already has a source IP assigned
     if (!ip_addr_isany(&uni->source_ip)) {
         if (!ip_addr_cmp(src_ip, &uni->source_ip)) {
-        	// Different IP detected - ignore this packet (no merge support)
+            // Different IP detected - ignore this packet (no merge support)
             return;
         }
     } else {
@@ -193,8 +193,8 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
     // Only reply if at least one of our Port-Addresses falls within the
     // targeted range [TargetPortAddressBottom, TargetPortAddressTop].
     if (pkt->flags & (1 << 5)) {
-        // Target PA fields need at least 18 bytes
-        if (len < 18) {
+        // Target PA fields need the longer packet
+        if (len < ARTNET_POLL_TARGETED_MIN_LENGTH) {
             ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
                                  "ArtPoll Target Short");
             return;
@@ -273,7 +273,12 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
             delay_ms = 1;
         }
         
-        osTimerStart(g_artnet_ctx.poll_reply_timer, delay_ms);
+        // If the timer can't start, nothing would ever send or clear the
+        // queue and later polls would only append: drop it instead, the
+        // controller polls again within 3 s.
+        if (osTimerStart(g_artnet_ctx.poll_reply_timer, delay_ms) != osOK) {
+            q->count = 0;
+        }
     }
 }
 
@@ -410,12 +415,11 @@ void ArtNet_HandleArtSync(const ip_addr_t *src_ip)
 /**
  * @brief Handle incoming ArtAddress packet
  * 
- * TODO: Not yet implemented. When implemented, this handler should:
- * - Parse NetSwitch, SubSwitch, SwOut[] to update Port-Address
- * - Parse ShortName/LongName to update device identity
- * - Parse Command field for merge mode, LED control, failsafe, etc.
- * - Apply changes via DeviceConfig_Set*() functions
- * - Send ArtPollReply to confirm changes
+ * Stub: answers every full-length ArtAddress with RcConfigErr and the
+ * unchanged state. The implementation (names, Net/Sub/SwOut, AcFail*,
+ * AcLed*, AcCancelMerge, AcClearOp0) is Phase C/D of
+ * docs/plans/config-commits-and-artaddress.md: fields become one
+ * DeviceConfig_Patch_t submitted to ControlTask, transient commands run here.
  */
 void ArtNet_HandleArtAddress(const ArtNet_ArtAddress_t *pkt, uint16_t len,
                             const ip_addr_t *src_ip, u16_t src_port)

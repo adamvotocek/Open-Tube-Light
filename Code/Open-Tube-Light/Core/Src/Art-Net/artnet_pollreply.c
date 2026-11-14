@@ -45,6 +45,10 @@ typedef struct {
 
 /* ========================== Private Function Prototypes ========================== */
 
+static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segment_format);
+static uint8_t ArtNet_BuildStatus1(void);
+static uint8_t ArtNet_BuildStatus2(void);
+static uint8_t ArtNet_BuildStatus3(void);
 static void ArtNet_FormatNodeReport(char *out, size_t out_size, const DeviceConfig_t *config);
 static void ArtNet_TextAppendChar(ArtNet_TextWriter_t *w, char c);
 static void ArtNet_TextAppendStr(ArtNet_TextWriter_t *w, const char *s);
@@ -64,8 +68,12 @@ void ArtNet_PollReplyTimerCallback(void *arg)
     (void)arg;
     
     if (g_artnet_ctx.reply_queue.count > 0) {
-        // Schedule send in LwIP's tcpip_thread context
-        tcpip_callback(ArtNet_PollReplySendCallback, NULL);
+        // Schedule send in LwIP's tcpip_thread context. On failure (no free
+        // tcpip message, MEMP_NUM_TCPIP_MSG_API) retry shortly: the queue is
+        // owned by tcpip_thread, so it can't be cleared from here.
+        if (tcpip_callback(ArtNet_PollReplySendCallback, NULL) != ERR_OK) {
+            (void)osTimerStart(g_artnet_ctx.poll_reply_timer, ARTNET_POLL_REPLY_RETRY_MS);
+        }
     }
 }
 
@@ -85,102 +93,6 @@ void ArtNet_PollReplySendCallback(void *arg)
         ArtNet_SendPollReply(&q->entries[i].addr, q->entries[i].port);
     }
     q->count = 0;
-}
-
-/* ========================== Status Helpers ========================== */
-
-static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segment_format)
-{
-    switch (segment_format) {
-        case SEGMENT_FORMAT_RGBW:
-            return "RGBW";
-        case SEGMENT_FORMAT_RGB16:
-            return "RGB16";
-        case SEGMENT_FORMAT_RGB:
-        default:
-            return "RGB";
-    }
-}
-
-/**
- * @brief Build status1, currently static
- *
- *       Bit 7-6: Indicator state (11=normal; locate/mute come with ArtAddress AcLed*)
- *       Bit 5-4: Port-Address programming authority (00=unknown until ArtAddress exists)
- *       Bit 3: Reserved (0)
- *       Bit 2: Boot mode (0=normal)
- *       Bit 1: RDM capable (0=no)
- *       Bit 0: UBEA present (0=no)
- */
-static uint8_t ArtNet_BuildStatus1(void)
-{
-    uint8_t status1 = (uint8_t)(0x3U << 6);  // Indicators in normal mode
-
-    return status1;
-}
-
-/**
- * @brief Build status2 byte with dynamic DHCP status
- * 
- * Sets DHCP capability and active bits based on LwIP configuration.
- *       Bit 7: RDM via ArtAddress (0=no)
- *       Bit 6: Output style via ArtAddress (0=no)
- *       Bit 5: Squawking (0=no)
- *       Bit 4: sACN switching (0=no)
- *       Bit 3: 15-bit Port-Address support (1=yes)
- *       Bit 2: DHCP capable (dynamic)
- *       Bit 1: DHCP active (dynamic)
- *       Bit 0: Browser config (0=no)
- */
-static uint8_t ArtNet_BuildStatus2(void)
-{
-    // Base status2: 15-bit Port-Address support
-    uint8_t status2 = 0x08;
-    
-#if LWIP_DHCP
-    status2 |= (1 << 2);  // DHCP capable
-    
-    if (dhcp_supplied_address(&gnetif)) {
-        status2 |= (1 << 1);  // DHCP active
-    }
-#endif
-    
-    return status2;
-}
-
-/**
- * @brief Build status3 byte based on configuration
- * 
- * Sets failsafe state bits based on device config.
- *       Bit 7-6: Failsafe state (dynamic)
- *       Bit 5: Failsafe programming support (0=no) // TODO: Implement failsafe programming via ArtAddress
- *       Bit 4: LLRP support (0=no)
- *       Bit 3: Port direction switching (0=no)
- *       Bit 2: RDMnet support (0=no)
- *       Bit 1: Background queue (0=no)
- *       Bit 0: Background discovery via ArtAddress (0=no)
- */
-static uint8_t ArtNet_BuildStatus3(void)
-{
-    const DeviceConfig_t *config = DeviceConfig_Get();
-    uint8_t status3 = 0x00;
-    
-    // Bits 7-6: Failsafe state
-    // 00 = Hold last, 01 = Zero, 10 = Full, 11 = Playback scene
-    switch (config->output.failsafe) {
-        case FAILSAFE_ZERO:
-            status3 |= (0x01 << 6);
-            break;
-        case FAILSAFE_FULL:
-            status3 |= (0x02 << 6);
-            break;
-        case FAILSAFE_HOLD:
-        default:
-            // 00 = Hold last (default)
-            break;
-    }
-    
-    return status3;
 }
 
 /* ========================== ArtPollReply Construction ========================== */
@@ -231,7 +143,7 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     reply->sub_switch = config->dmx.artnet_subnet & 0x0F;
     
     // ===== DEVICE NAMES =====
-    strncpy(reply->short_name, config->identity.short_name, 17);
+    strncpy(reply->port_name, config->identity.port_name, 17);
     strncpy(reply->long_name, config->identity.long_name, 63);
     
     // ===== OEM & ESTA CODES =====
@@ -388,4 +300,98 @@ static void ArtNet_TextAppendUnsigned(ArtNet_TextWriter_t *w, uint32_t value,
         count--;
         ArtNet_TextAppendChar(w, digits[count]);
     }
+}
+
+static const char *ArtNet_GetSegmentFormatName(DeviceConfig_SegmentFormat_t segment_format)
+{
+    switch (segment_format) {
+        case SEGMENT_FORMAT_RGBW:
+            return "RGBW";
+        case SEGMENT_FORMAT_RGB16:
+            return "RGB16";
+        case SEGMENT_FORMAT_RGB:
+        default:
+            return "RGB";
+    }
+}
+
+/**
+ * @brief Build status1, currently static
+ *
+ *       Bit 7-6: Indicator state (11=normal; locate/mute come with ArtAddress AcLed*)
+ *       Bit 5-4: Port-Address programming authority (00=unknown until ArtAddress exists)
+ *       Bit 3: Reserved (0)
+ *       Bit 2: Boot mode (0=normal)
+ *       Bit 1: RDM capable (0=no)
+ *       Bit 0: UBEA present (0=no)
+ */
+static uint8_t ArtNet_BuildStatus1(void)
+{
+    uint8_t status1 = (uint8_t)(0x3U << 6);  // Indicators in normal mode
+
+    return status1;
+}
+
+/**
+ * @brief Build status2 byte with dynamic DHCP status
+ * 
+ * Sets DHCP capability and active bits based on LwIP configuration.
+ *       Bit 7: RDM via ArtAddress (0=no)
+ *       Bit 6: Output style via ArtAddress (0=no)
+ *       Bit 5: Squawking (0=no)
+ *       Bit 4: sACN switching (0=no)
+ *       Bit 3: 15-bit Port-Address support (1=yes)
+ *       Bit 2: DHCP capable (dynamic)
+ *       Bit 1: DHCP active (dynamic)
+ *       Bit 0: Browser config (0=no)
+ */
+static uint8_t ArtNet_BuildStatus2(void)
+{
+    // Base status2: 15-bit Port-Address support
+    uint8_t status2 = 0x08;
+    
+#if LWIP_DHCP
+    status2 |= (1 << 2);  // DHCP capable
+    
+    if (dhcp_supplied_address(&gnetif)) {
+        status2 |= (1 << 1);  // DHCP active
+    }
+#endif
+    
+    return status2;
+}
+
+/**
+ * @brief Build status3 byte based on configuration
+ * 
+ * Sets failsafe state bits based on device config.
+ *       Bit 7-6: Failsafe state (dynamic)
+ *       Bit 5: Failsafe programming support (0=no) // TODO: Implement failsafe programming via ArtAddress
+ *       Bit 4: LLRP support (0=no)
+ *       Bit 3: Port direction switching (0=no)
+ *       Bit 2: RDMnet support (0=no)
+ *       Bit 1: Background queue (0=no)
+ *       Bit 0: Background discovery via ArtAddress (0=no)
+ */
+static uint8_t ArtNet_BuildStatus3(void)
+{
+    const DeviceConfig_t *config = DeviceConfig_Get();
+    uint8_t status3 = 0x00;
+    
+    // Bits 7-6: Failsafe state
+    // 00 = Hold last, 01 = Zero, 10 = Full, 11 = Playback scene
+    switch (config->output.failsafe) {
+        case FAILSAFE_ZERO:
+            status3 |= (0x01 << 6);
+            break;
+        case FAILSAFE_FULL:
+            status3 |= (0x02 << 6);
+            break;
+        case FAILSAFE_HOLD:
+        default:
+            // 00 = Hold last (default)
+            break;
+    }
+    
+    return status3;
 }

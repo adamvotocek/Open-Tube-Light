@@ -688,8 +688,9 @@ void EffectTaskRun(void *argument)
   for (;;)
   {
     // Wait for notification from DMX input source or timeout for periodic SPI refresh
-    uint32_t flags = osThreadFlagsWait(0x01, osFlagsWaitAny, DMX_INPUT_REFRESH_INTERVAL_MS);
-    bool new_frame = !(flags & osFlagsError) && (flags & 0x01);
+    uint32_t flags = osThreadFlagsWait(DMX_INPUT_FLAG_FRAME_READY, osFlagsWaitAny,
+                                       DMX_INPUT_REFRESH_INTERVAL_MS);
+    bool new_frame = !(flags & osFlagsError) && (flags & DMX_INPUT_FLAG_FRAME_READY);
     uint32_t now = osKernelGetTickCount();
 
     if (new_frame) {

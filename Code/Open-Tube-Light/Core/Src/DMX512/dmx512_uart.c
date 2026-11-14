@@ -34,9 +34,6 @@
 
 /* ========================== Private Constants ========================== */
 
-/** @brief Thread notification flag matching EffectTask convention */
-#define DMX512_THREAD_FLAG_FRAME_READY  0x01U
-
 /** @brief Full DMX512 packet size: 1 START code byte + 512 data slots (DMA buffer length) */
 #define DMX512_PACKET_MAX_SIZE          513U
 
@@ -372,7 +369,7 @@ bool DMX512_Uart_DeferredNotify(void)
     ctx.deferred_notify_flag = false;
 
     if (ctx.notify_task != NULL) {
-        osThreadFlagsSet(ctx.notify_task, DMX512_THREAD_FLAG_FRAME_READY);
+        osThreadFlagsSet(ctx.notify_task, DMX_INPUT_FLAG_FRAME_READY);
     }
     return true;
 }

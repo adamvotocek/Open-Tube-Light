@@ -8,10 +8,10 @@
  * Packet-specific handling is delegated to:
  * - artnet_handlers.c: ArtDmx, ArtPoll, ArtCommand, ArtSync, ArtAddress,
  *   ArtInput, ArtDataRequest handlers
+ * - artnet_pollreply.c: ArtPollReply construction and transmission
  *
  * Opcodes without a handler are dropped silently (artnet_ignored_count).
- * - artnet_pollreply.c: ArtPollReply construction and transmission
- * 
+ *
  * @see artnet_internal.h for shared internal types and state
  */
 
@@ -30,10 +30,10 @@ ArtNet_Context_t g_artnet_ctx = {0};
 /**
  * @brief Packets dropped without action (Live Watch)
  *
- * Counts UDP datagrams on port 0x1936 that are too short to be Art-Net or
- * carry an opcode this node does not handle (other nodes' ArtPollReply,
- * ArtTimeCode, RDM, ...). The spec requires these to be ignored, so they no
- * longer touch the NodeReport.
+ * Counts UDP datagrams on port 0x1936 that are too short to be Art-Net,
+ * arrive as a chained pbuf, or carry an opcode this node does not handle
+ * (other nodes' ArtPollReply, ArtTimeCode, RDM, ...). The spec requires these
+ * to be ignored, so they do not touch the NodeReport.
  */
 uint32_t artnet_ignored_count = 0;
 
@@ -60,6 +60,7 @@ uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGT
 static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                                        const ip_addr_t *addr, u16_t port);
 static const char *ArtNet_NodeReportDefaultDetail(uint16_t code);
+static uint32_t ArtNet_PrngSeed(void);
 
 /* ========================== Public API Implementation ========================== */
 
@@ -82,8 +83,9 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     g_artnet_ctx.poll_reply_counter = 0;
     ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_POWER_OK, NULL);
     
-    // Seed PRNG with system tick for random delay generation
-    g_artnet_ctx.prng_state = osKernelGetTickCount() ^ 0xDEADBEEF;
+    // Per-unit seed, so fixtures powered up together pick different
+    // ArtPollReply delays (the delay exists to spread their replies)
+    g_artnet_ctx.prng_state = ArtNet_PrngSeed();
     
     // Create mutex for shadow buffer access
     // Priority inheritance prevents inversion if task priorities diverge
@@ -104,30 +106,30 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
         return -1;
     }
     
-    // Create UDP protocol control block and bind to Art-Net port
+    // Create the UDP PCB and bind to the Art-Net port. Raw LwIP API from a
+    // task: hold the core lock so tcpip_thread is not inside LwIP meanwhile.
+    LOCK_TCPIP_CORE();
     g_artnet_ctx.pcb = udp_new();
-    if (g_artnet_ctx.pcb == NULL) {
-        osTimerDelete(g_artnet_ctx.poll_reply_timer);
-        g_artnet_ctx.poll_reply_timer = NULL;
-        osMutexDelete(g_artnet_ctx.shadow_mutex);
-        g_artnet_ctx.shadow_mutex = NULL;
-        return -1;
-    }
-    
-    err_t err = udp_bind(g_artnet_ctx.pcb, IP_ADDR_ANY, ARTNET_PORT);
-    if (err != ERR_OK) {
+    err_t err = (g_artnet_ctx.pcb != NULL)
+              ? udp_bind(g_artnet_ctx.pcb, IP_ADDR_ANY, ARTNET_PORT)
+              : ERR_MEM;
+    if (err == ERR_OK) {
+        // Receive callback runs in tcpip_thread context
+        udp_recv(g_artnet_ctx.pcb, ArtNet_UdpReceiveCallback, NULL);
+    } else if (g_artnet_ctx.pcb != NULL) {
         udp_remove(g_artnet_ctx.pcb);
         g_artnet_ctx.pcb = NULL;
+    }
+    UNLOCK_TCPIP_CORE();
+
+    if (err != ERR_OK) {
         osTimerDelete(g_artnet_ctx.poll_reply_timer);
         g_artnet_ctx.poll_reply_timer = NULL;
         osMutexDelete(g_artnet_ctx.shadow_mutex);
         g_artnet_ctx.shadow_mutex = NULL;
         return -1;
     }
-    
-    // Receive callback runs in tcpip_thread context
-    udp_recv(g_artnet_ctx.pcb, ArtNet_UdpReceiveCallback, NULL);
-    
+
     g_artnet_ctx.initialized = true;
     return 0;
 }
@@ -138,12 +140,18 @@ void ArtNet_Deinit(void)
         return;
     }
     
-    // Stop receiving — must happen first to prevent callbacks during teardown
+    // Stop receiving — must happen first to prevent callbacks during teardown.
+    // Under the core lock: raw LwIP API, and tcpip_thread owns the state below.
+    LOCK_TCPIP_CORE();
     if (g_artnet_ctx.pcb != NULL) {
         udp_remove(g_artnet_ctx.pcb);
         g_artnet_ctx.pcb = NULL;
     }
-    
+    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
+    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
+    memset(&g_artnet_ctx.node_report, 0, sizeof(ArtNet_NodeReportState_t));
+    UNLOCK_TCPIP_CORE();
+
     // Cancel any pending poll reply timer
     if (g_artnet_ctx.poll_reply_timer != NULL) {
         osTimerStop(g_artnet_ctx.poll_reply_timer);
@@ -159,10 +167,7 @@ void ArtNet_Deinit(void)
     // Zero buffers so lights go dark on protocol switch
     memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
     memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
-    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
-    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
-    memset(&g_artnet_ctx.node_report, 0, sizeof(ArtNet_NodeReportState_t));
-    
+
     g_artnet_ctx.processing_task = NULL;
     g_artnet_ctx.initialized = false;
 }
@@ -205,8 +210,11 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     }
 
     // Too short to be Art-Net at all: not ours, ignore silently (spec: "Any
-    // other packets are ignored")
-    if (p->tot_len < sizeof(ArtNet_Header_t)) {
+    // other packets are ignored"). Handlers read p->payload as one contiguous
+    // packet, so also drop chained pbufs. Every Art-Net packet fits one
+    // ETH_RX_BUFFER_SIZE (1536 B) buffer and IP_REASSEMBLY is 0, so a chain
+    // never carries a valid packet today.
+    if (p->tot_len < sizeof(ArtNet_Header_t) || p->len != p->tot_len) {
         artnet_ignored_count++;
         pbuf_free(p);
         return;
@@ -228,7 +236,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     // Dispatch to appropriate handler
     switch (opcode) {
         case ARTNET_OP_DMX:
-            if (p->tot_len >= 18) {
+            if (p->tot_len >= ARTNET_DMX_HEADER_LENGTH) {
                 ArtNet_HandleArtDmx((const ArtNet_ArtDmx_t *)data, p->tot_len, addr);
             } else {
                 ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
@@ -251,7 +259,7 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             break;
 
         case ARTNET_OP_POLL:
-            if (p->tot_len >= 14) {
+            if (p->tot_len >= ARTNET_POLL_MIN_LENGTH) {
                 ArtNet_HandleArtPoll((const ArtNet_ArtPoll_t *)data, p->tot_len,
                                     addr, port);
             } else {
@@ -378,9 +386,9 @@ uint32_t ArtNet_PrngNext(void)
 
 void ArtNet_TriggerFrameOutput(void)
 {
-	// Notify processing task
+    // Notify processing task
     if (g_artnet_ctx.processing_task != NULL) {
-        osThreadFlagsSet(g_artnet_ctx.processing_task, ARTNET_THREAD_FLAG_FRAME_READY);
+        osThreadFlagsSet(g_artnet_ctx.processing_task, DMX_INPUT_FLAG_FRAME_READY);
     }
 }
 
@@ -391,5 +399,26 @@ const DMX_Input_Driver_t dmx_input_artnet = {
     .deinit              = ArtNet_Deinit,
     .latch               = ArtNet_LatchData,
     .get_universe        = ArtNet_GetUniverseData,
-    .failsafe_timeout_ms = 5000,  
+    .failsafe_timeout_ms = ARTNET_FAILSAFE_TIMEOUT_MS,
 };
+
+/* ========================== Private Functions ========================== */
+
+/**
+ * @brief Build a non-zero XorShift seed that differs between units
+ *
+ * The boot tick is nearly identical on every fixture, so mix in the
+ * UID-derived MAC (bytes 2..5 carry hash bits, byte 0 is fixed).
+ */
+static uint32_t ArtNet_PrngSeed(void)
+{
+    uint8_t mac[DEVICE_CONFIG_MAC_LEN];
+    uint32_t seed = osKernelGetTickCount() ^ 0xDEADBEEFU;
+
+    if (DeviceConfig_GetMacAddress(mac) == 0) {
+        seed ^= ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16) |
+                ((uint32_t)mac[4] << 8) | (uint32_t)mac[5];
+    }
+
+    return (seed != 0U) ? seed : 1U;  // XorShift state 0 never leaves 0
+}

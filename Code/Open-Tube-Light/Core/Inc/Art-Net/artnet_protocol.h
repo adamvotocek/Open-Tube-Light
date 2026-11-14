@@ -15,6 +15,7 @@
 #ifndef INC_ARTNET_PROTOCOL_H_
 #define INC_ARTNET_PROTOCOL_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -62,9 +63,9 @@ extern "C" {
 /**
  * @brief Controller disconnect timeout (5 seconds)
  * @note If no ArtDmx received within this time, reset source IP tracking.
- *       Must be <= failsafe_timeout_ms so that source IP is cleared before
- *       or when failsafe triggers, allowing a new controller to take over
- *       without being blocked by the stale source IP.
+ *       Must be <= ARTNET_FAILSAFE_TIMEOUT_MS (static assert in
+ *       artnet_internal.h) so a new controller can take over by the time
+ *       failsafe triggers.
  */
 #define ARTNET_DISCONNECT_TIMEOUT_MS  5000
 
@@ -127,7 +128,7 @@ extern "C" {
 /**
  * @brief OpAddress - Remote node configuration
  * @note Controller sends this to reprogram node settings (names, Port-Address, etc.)
- * @note Handler exists but is not yet implemented
+ * @note Handler is a stub that replies RcConfigErr until ArtAddress is implemented
  */
 #define ARTNET_OP_ADDRESS       0x6000
 
@@ -187,10 +188,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  prot_ver_lo;      ///< Protocol version low byte
     uint8_t  flags;            ///< Behavior flags
     uint8_t  diag_priority;    ///< Diagnostic message priority
-    uint8_t  target_pa_top_hi; ///< Top of the range of Port-Addresses high byte (optional, only in tageted mode)
-    uint8_t  target_pa_top_lo; ///< Top of the range of Port-Addresses low byte (optional, only in tageted mode)
-    uint8_t  target_pa_bot_hi; ///< Bottom of the range of Port-Addresses high byte (optional, only in tageted mode)
-    uint8_t  target_pa_bot_lo; ///< Bottom of the range of Port-Addresses low byte (optional, only in tageted mode)
+    uint8_t  target_pa_top_hi; ///< Top of the range of Port-Addresses high byte (optional, only in targeted mode)
+    uint8_t  target_pa_top_lo; ///< Top of the range of Port-Addresses low byte (optional, only in targeted mode)
+    uint8_t  target_pa_bot_hi; ///< Bottom of the range of Port-Addresses high byte (optional, only in targeted mode)
+    uint8_t  target_pa_bot_lo; ///< Bottom of the range of Port-Addresses low byte (optional, only in targeted mode)
     uint8_t  esta_man_hi;      ///< ESTA manufacturer code high byte (optional)
     uint8_t  esta_man_lo;      ///< ESTA manufacturer code low byte (optional)
     uint8_t  oem_hi;           ///< OEM code high byte (optional)
@@ -234,7 +235,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  status1;        ///< General status flags
     uint8_t  esta_man_lo;    ///< ESTA manufacturer code low byte
     uint8_t  esta_man_hi;    ///< ESTA manufacturer code high byte
-    char     short_name[18]; ///< Short name (max 17 chars + null)
+    char     port_name[18]; ///< Short name (max 17 chars + null)
     char     long_name[64];  ///< Long name (max 63 chars + null)
     char     node_report[64];///< Status report string
     uint8_t  num_ports_hi;   ///< Number of ports high byte
@@ -297,10 +298,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  prot_ver_lo;     ///< Protocol version low byte
     uint8_t  net_switch;      ///< Top 7 bits of the 15-bit Port-Address (Bits 8-14).
     uint8_t  bind_index;      ///< Defines the bound node. 1 = root device.
-    uint8_t  short_name[18];  ///< Max 17 chars + null. For short_name reproggraming.
-    uint8_t  long_name[64];   ///< Max 63 chars + null. For long_name reproggraming.
-    uint8_t  sw_in[4];        ///< Bits 3-0 of the 15 bit Port-Address for a given input port are here
-    uint8_t  sw_out[4];       ///< Bits 3-0 of the 15 bit Port-Address for a given input port are here
+    uint8_t  port_name[18];  ///< Spec "PortName": max 17 chars + null; empty = no change
+    uint8_t  long_name[64];   ///< Max 63 chars + null; empty = no change
+    uint8_t  sw_in[4];        ///< Bits 3-0 of the Port-Address of each input port (bit 7 = program)
+    uint8_t  sw_out[4];       ///< Bits 3-0 of the Port-Address of each output port (bit 7 = program)
     uint8_t  sub_switch;      ///< Middle 4 bits of the 15-bit Port-Address (Bits 4-7).
     uint8_t  acn_priority;    ///< sACN Priority (0-200). 255 means no change.
     uint8_t  command;         ///< Various commands for node configuration.
@@ -365,7 +366,21 @@ typedef struct __attribute__((packed)) {
     uint8_t  pay_len_lo;      ///< Payload length low byte
 } ArtNet_ArtDataReplyHeader_t;
 
-/* Wire sizes per Art-Net 4 spec; catch accidental padding or field edits */
+/* ========================== Minimum Packet Lengths ========================== */
+
+/** @brief ArtDmx header length; DMX data starts here */
+#define ARTNET_DMX_HEADER_LENGTH         18U
+
+/** @brief Shortest ArtPoll a node must accept (through DiagPriority); later fields default to 0 */
+#define ARTNET_POLL_MIN_LENGTH           14U
+
+/** @brief ArtPoll length needed to read the targeted-mode Port-Address range */
+#define ARTNET_POLL_TARGETED_MIN_LENGTH  18U
+
+/* Wire sizes and offsets per Art-Net 4 spec; catch accidental padding or field edits */
+_Static_assert(offsetof(ArtNet_ArtDmx_t, data) == ARTNET_DMX_HEADER_LENGTH, "ArtDmx header must be 18 bytes");
+_Static_assert(offsetof(ArtNet_ArtPoll_t, target_pa_top_hi) == ARTNET_POLL_MIN_LENGTH, "ArtPoll minimum is 14 bytes");
+_Static_assert(offsetof(ArtNet_ArtPoll_t, esta_man_hi) == ARTNET_POLL_TARGETED_MIN_LENGTH, "ArtPoll target range ends at 18");
 _Static_assert(sizeof(ArtNet_ArtPollReply_t) == 239, "ArtPollReply must be 239 bytes");
 _Static_assert(sizeof(ArtNet_ArtAddress_t) == 107, "ArtAddress must be 107 bytes");
 _Static_assert(sizeof(ArtNet_ArtInput_t) == 20, "ArtInput must be 20 bytes");
@@ -376,7 +391,6 @@ _Static_assert(sizeof(ArtNet_ArtDataReplyHeader_t) == 20, "ArtDataReply header m
 
 /**
  * @brief Extract network number from Port-Address
- * @param sub_uni The sub_uni byte from ArtDmx packet
  * @param net The net byte from ArtDmx packet
  * @return Network number (0-127)
  */

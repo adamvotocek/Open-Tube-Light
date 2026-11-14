@@ -27,6 +27,15 @@ extern "C" {
 /** @brief SPI retransmit interval when no new DMX data arrives (ms) */
 #define DMX_INPUT_REFRESH_INTERVAL_MS  150
 
+/**
+ * @brief EffectTask thread flag a driver sets when a new frame is ready to latch
+ *
+ * Shared by every driver and EffectTask, so it is defined once here. Other
+ * EffectTask flags (e.g. ControlTask's init-ready 0x02 in main.c) must not
+ * collide with it.
+ */
+#define DMX_INPUT_FLAG_FRAME_READY     0x01U
+
 /* ========================== Types ========================== */
 
 /**
