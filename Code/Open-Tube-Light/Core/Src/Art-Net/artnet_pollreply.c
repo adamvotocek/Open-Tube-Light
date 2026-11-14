@@ -8,6 +8,8 @@
  * 
  * The reply is sent with a random delay (0-1s) per Art-Net spec to prevent
  * network congestion when many nodes respond to broadcast polls.
+ * Replies to configuration packets (ArtCommand, ArtAddress, ArtInput) go out
+ * at once and replace a queued reply to the same controller.
  * 
  * @section threading Threading
  * 
@@ -54,6 +56,7 @@ static void ArtNet_TextAppendChar(ArtNet_TextWriter_t *w, char c);
 static void ArtNet_TextAppendStr(ArtNet_TextWriter_t *w, const char *s);
 static void ArtNet_TextAppendUnsigned(ArtNet_TextWriter_t *w, uint32_t value,
                                       uint32_t base, uint8_t min_digits);
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip, u16_t src_port);
 
 /* ========================== Timer Callback ========================== */
 
@@ -208,6 +211,31 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     // Send reply to the requesting controller (0x1936, plus its source port if not 0x1936)
     ArtNet_SendReply(p, addr, port);
     pbuf_free(p);
+}
+
+/* ========================== Immediate Replies ========================== */
+
+/**
+ * @brief Send an ArtPollReply now, replacing a queued one for the same controller
+ *
+ * If a delayed ArtPollReply for the same controller is already queued,
+ * collapse it into this immediate reply so the controller does not receive
+ * two near-identical PollReply packets for one interaction.
+ */
+void ArtNet_ReplyImmediate(const ip_addr_t *src_ip, u16_t src_port)
+{
+    ArtNet_RemoveQueuedPollReply(src_ip, src_port);
+    ArtNet_SendPollReply(src_ip, src_port);
+}
+
+/**
+ * @brief Set the NodeReport, then send an immediate ArtPollReply
+ */
+void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
+                                 uint16_t code, const char *detail)
+{
+    ArtNet_NodeReportSet(code, detail);
+    ArtNet_ReplyImmediate(src_ip, src_port);
 }
 
 /* ========================== Private Functions ========================== */
@@ -394,4 +422,37 @@ static uint8_t ArtNet_BuildStatus3(void)
     }
     
     return status3;
+}
+
+/**
+ * Drop queued ArtPoll replies that an immediate reply to (src_ip, src_port)
+ * already covers: same IP, and port 0x1936 or src_port (ArtNet_SendReply
+ * sends to both). A queued reply for another tool on that IP stays queued.
+ */
+static void ArtNet_RemoveQueuedPollReply(const ip_addr_t *src_ip, u16_t src_port)
+{
+    ArtNet_PollReplyQueue_t *queue = &g_artnet_ctx.reply_queue;
+    uint8_t kept = 0U;
+
+    if (src_ip == NULL) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < queue->count; i++) {
+        const ArtNet_PollReplyDest_t *entry = &queue->entries[i];
+        bool covered = ip_addr_cmp(src_ip, &entry->addr) &&
+                       (entry->port == ARTNET_PORT || entry->port == src_port);
+        if (!covered) {
+            queue->entries[kept++] = *entry;
+        }
+    }
+
+    if (kept == queue->count) {
+        return;  // Nothing removed
+    }
+
+    queue->count = kept;
+    if (queue->count == 0U && g_artnet_ctx.poll_reply_timer != NULL) {
+        osTimerStop(g_artnet_ctx.poll_reply_timer);
+    }
 }

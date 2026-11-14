@@ -6,9 +6,11 @@
  * UDP receive callback, packet dispatch, and buffer management.
  * 
  * Packet-specific handling is delegated to:
- * - artnet_handlers.c: ArtDmx, ArtPoll, ArtCommand, ArtSync, ArtAddress,
- *   ArtInput, ArtDataRequest handlers
- * - artnet_pollreply.c: ArtPollReply construction and transmission
+ * - artnet_handlers.c: ArtDmx, ArtPoll, ArtSync, ArtAddress, ArtInput,
+ *   ArtDataRequest handlers
+ * - artnet_command.c: ArtCommand (custom OpenTubeDia verbs)
+ * - artnet_pollreply.c: ArtPollReply construction, transmission and
+ *   immediate replies
  *
  * Opcodes without a handler are dropped silently (artnet_ignored_count).
  *

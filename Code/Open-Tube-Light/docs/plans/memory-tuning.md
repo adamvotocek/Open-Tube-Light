@@ -18,7 +18,7 @@ Reduce RAM pressure and improve confidence in task memory sizing without breakin
 **Where**
 
 - `Core/Src/Art-Net/artnet.c`
-- `Core/Src/Art-Net/artnet_handlers.c`
+- `Core/Src/Art-Net/artnet_command.c`
 
 **Why**
 

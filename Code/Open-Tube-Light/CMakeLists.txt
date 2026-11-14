@@ -51,6 +51,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/SK9822/sk9822.c
     Core/Src/Art-Net/artnet.c
     Core/Src/Art-Net/artnet_handlers.c
+    Core/Src/Art-Net/artnet_command.c
     Core/Src/Art-Net/artnet_pollreply.c
     Core/Src/DMX512/dmx512_uart.c
     Core/Src/OLED/ssd1306.c

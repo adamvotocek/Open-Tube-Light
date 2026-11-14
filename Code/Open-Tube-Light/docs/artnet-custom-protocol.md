@@ -26,7 +26,7 @@ Reply timing:
 - `ArtCommand`, `ArtInput`, `ArtAddress` → immediate `ArtPollReply` (acknowledgement). It replaces a queued poll reply to the same controller and port.
 - `ArtDataRequest` → immediate `ArtDataReply`, or no reply for unsupported codes.
 
-Implementation: `ArtNet_SendReply()` in `Core/Src/Art-Net/artnet.c`; reply queue in `ArtNet_HandleArtPoll()` / `ArtNet_RemoveQueuedPollReply()` in `artnet_handlers.c`.
+Implementation: `ArtNet_SendReply()` in `Core/Src/Art-Net/artnet.c`; reply queue in `ArtNet_HandleArtPoll()` (`artnet_handlers.c`) and `ArtNet_RemoveQueuedPollReply()` (`artnet_pollreply.c`).
 
 ## NodeReport format — implemented
 
@@ -67,7 +67,7 @@ Command=Data&Command=Data&
   - malformed packet (too short, bad length, missing NUL) → `RcParseFail`
   - unknown command, invalid value, duplicate, unsupported mode → `RcConfigErr` (`0x000C`)
 
-Implementation: `ArtNet_HandleArtCommand()` / `ArtNet_ParseCommandPayload()` in `Core/Src/Art-Net/artnet_handlers.c`.
+Implementation: `ArtNet_HandleArtCommand()` / `ArtNet_ParseCommandPayload()` in `Core/Src/Art-Net/artnet_command.c`.
 
 ### Change DMX address
 

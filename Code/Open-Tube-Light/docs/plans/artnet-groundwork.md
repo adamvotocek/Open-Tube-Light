@@ -1,6 +1,6 @@
 # Plan: Art-Net groundwork (always-on node, file split, 6 s failsafe)
 
-**Status (2026-11-14):** planned, not started. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
+**Status (2026-11-14):** commit 1 done (bench 57/57 with Lightkey), commits 2–4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
 
 ## In short
 
@@ -28,7 +28,7 @@ Nothing changes for a tube in Art-Net mode: the bench script must stay at 57/57.
 | `artnet_dmx.c` (new) | **Data part:** shadow/active buffers, `ArtNet_DataStart/Stop`, latch, `get_universe`, the `dmx_input_artnet` vtable, ArtDmx and ArtSync handlers | Spread over `artnet.c` and `artnet_handlers.c` |
 | `artnet_command.c` (new) | The transitional ArtCommand text parser (OpenTubeDia verbs). Deleted as one file when RDM replaces it. | ~385 lines in `artnet_handlers.c` |
 | `artnet_handlers.c` | Control packets: ArtPoll, ArtAddress, ArtInput, ArtDataRequest (~270 lines) | Also ArtDmx, ArtSync, ArtCommand |
-| `artnet_pollreply.c` | ArtPollReply build/send **and** the reply queue, now including `ArtNet_ReplyImmediate(Status)` and `ArtNet_RemoveQueuedPollReply` | Those three are `static` in `artnet_handlers.c` |
+| `artnet_pollreply.c` | ArtPollReply build/send **and** the reply queue, now including `ArtNet_ReplyImmediate(Status)` (shared) and `ArtNet_RemoveQueuedPollReply` (private) | Those three are `static` in `artnet_handlers.c` |
 
 Placement reasoning: each file owns one kind of state. The data part owns the buffers and per-universe tracking that only matter while Art-Net is the input. The reply queue helpers move next to the queue they edit, because ArtCommand, ArtAddress and ArtInput all use them. Rejected alternative: keep the data part in `artnet.c` behind an "enabled" flag. It is fewer files, but the node file would again mix always-on and switchable state, which is what this plan untangles.
 
@@ -51,7 +51,7 @@ Four commits, each built and bench-tested before the next. The first two are **p
    - all parser helpers: `IsWhitespace`, `GetNullTerminatedLength`, `TrimSpan`, `SpanEqualsIgnoreCase`, `ParseUint16Span`, `ParseCommandPayload`, `GetCommandSuccessDetail`, `GetCommandApplyErrorDetail`
 
    They stay `static`, with prototypes at the top and definitions under the Private Functions banner.
-2. Move `ArtNet_ReplyImmediate`, `ArtNet_ReplyImmediateStatus` and `ArtNet_RemoveQueuedPollReply` to `artnet_pollreply.c`. Make them non-static and declare them in `artnet_internal.h` (ArtPollReply section). The handlers and the command file both call them.
+2. Move `ArtNet_ReplyImmediate`, `ArtNet_ReplyImmediateStatus` and `ArtNet_RemoveQueuedPollReply` to `artnet_pollreply.c`. The first two become non-static and are declared in `artnet_internal.h` (ArtPollReply section), because the handlers and the command file both call them. `ArtNet_RemoveQueuedPollReply` is only used by `ArtNet_ReplyImmediate`, so it stays `static`.
 3. Add `artnet_command.c` to `target_sources` in the root `CMakeLists.txt`.
 4. Update the file headers of `artnet_handlers.c` and `artnet.c` (which file handles what).
 

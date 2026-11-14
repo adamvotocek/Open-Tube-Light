@@ -42,11 +42,11 @@ The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and
 
 **Recommendation.** Allocate the slot in `tcpip_thread` at submit time (IP, port, kind, verb hint), and pass an opaque `void *cookie` (or a slot index) through the request. `done()` stores only the result into the slot and calls `tcpip_callback(ArtNet_SendConfigReply, slot)`. If no slot is free, reply `RcConfigErr "Config Busy"` without submitting. **Slot:** Phase B; amend the plan before implementing.
 
-### 3. Split the ArtCommand parser out of `artnet_handlers.c`
+### 3. Split the ArtCommand parser out of `artnet_handlers.c` (done)
 
 **Finding.** `artnet_handlers.c` is about 900 lines, past the 800-line split threshold in the plan, and about 400 of them are the transitional ArtCommand text parser.
 
-**Recommendation.** Move `ArtNet_HandleArtCommand` and its parser helpers into `artnet_command.c` as a pure move commit before Phase B. Phase B rewrites this handler, so the move keeps that diff readable, and the later RDM deprecation becomes a one-file delete. **Slot: decided 2026-11-14, groundwork first.** A separate pure-move commit, with item 1, before Phase B. Plan: `artnet-groundwork.md`.
+**Recommendation.** Move `ArtNet_HandleArtCommand` and its parser helpers into `artnet_command.c` as a pure move commit before Phase B. Phase B rewrites this handler, so the move keeps that diff readable, and the later RDM deprecation becomes a one-file delete. **Done 2026-11-14** (`artnet-groundwork.md` commit 1): `artnet_command.c`; `artnet_handlers.c` is down to about 425 lines.
 
 ### 4. One Port-Address mapping helper
 

@@ -3,7 +3,8 @@
  * @brief Art-Net Internal Module Interface
  * 
  * Shared types, state, and function declarations used across Art-Net
- * implementation modules (artnet.c, artnet_handlers.c, artnet_pollreply.c).
+ * implementation modules (artnet.c, artnet_handlers.c, artnet_command.c,
+ * artnet_pollreply.c).
  * 
  * @note Only include from artnet_*.c files — use artnet.h for application code.
  */
@@ -139,7 +140,7 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
                          const ip_addr_t *src_ip, u16_t src_port);
 
 /**
- * @brief Handle incoming ArtCommand packet
+ * @brief Handle incoming ArtCommand packet (artnet_command.c)
  */
 void ArtNet_HandleArtCommand(const ArtNet_ArtCommand_t *pkt, uint16_t len,
                             const ip_addr_t *src_ip, u16_t src_port);
@@ -176,6 +177,19 @@ void ArtNet_HandleArtDataRequest(const ArtNet_ArtDataRequest_t *pkt,
  * @note Must be called from tcpip_thread context
  */
 void ArtNet_SendPollReply(const ip_addr_t *src_ip, u16_t src_port);
+
+/**
+ * @brief Send an ArtPollReply now, replacing a queued one for the same controller
+ * @note Must be called from tcpip_thread context
+ */
+void ArtNet_ReplyImmediate(const ip_addr_t *src_ip, u16_t src_port);
+
+/**
+ * @brief Set the NodeReport, then send an immediate ArtPollReply
+ * @note Must be called from tcpip_thread context
+ */
+void ArtNet_ReplyImmediateStatus(const ip_addr_t *src_ip, u16_t src_port,
+                                 uint16_t code, const char *detail);
 
 /** @brief Timer callback for delayed ArtPollReply */
 void ArtNet_PollReplyTimerCallback(void *arg);

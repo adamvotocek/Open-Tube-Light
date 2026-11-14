@@ -113,7 +113,7 @@ void ConfigService_Process(uint32_t timeout_ms);              // ControlTask onl
    - otherwise, if `first_frame_received`, call `Pixel_Render_Frame()`, which re-renders the active buffer with the new layout or address without waiting for new DMX
 
    It doesn't latch. Name the flag `EFFECT_TASK_FLAG_CONFIG_CHANGED`.
-7. **ArtCommand migration** (`artnet_handlers.c`):
+7. **ArtCommand migration** (`artnet_command.c`):
    - The parse and validation of the text stays in `tcpip_thread`; it's bounded and cheap.
    - The handler fills a request with `reply_to` = source IP/port and `hint` = which verbs were present, submits it, and returns. Parse errors still reply immediately with `RcParseFail` / `RcConfigErr`, as today.
    - If the queue is full, reply immediately with `RcConfigErr "Config Busy"`.
@@ -140,7 +140,7 @@ void ConfigService_Process(uint32_t timeout_ms);              // ControlTask onl
 
 ## Phase C — ArtAddress (config fields + transient commands)
 
-**Placement:** `ArtNet_HandleArtAddress()` in `artnet_handlers.c` (the protocol mapping), with a new `ArtNet_ResetUniverseState()` in `artnet.c` next to the universe state it clears. Rejected alternative: a separate `artnet_address.c`. About 150 lines doesn't justify a module. `artnet_handlers.c` is already about 900 lines, so move the ArtCommand parser out first (`artnet-audit-followups.md` item 3). Use one Port-Address helper for SwOut contiguity, ArtDmx and ArtPoll (item 4).
+**Placement:** `ArtNet_HandleArtAddress()` in `artnet_handlers.c` (the protocol mapping), with a new `ArtNet_ResetUniverseState()` in `artnet.c` next to the universe state it clears. Rejected alternative: a separate `artnet_address.c`. About 150 lines doesn't justify a module. The ArtCommand parser has moved out (`artnet_command.c`), so `artnet_handlers.c` has room. Use one Port-Address helper for SwOut contiguity, ArtDmx and ArtPoll (item 4).
 
 **Accept rules**
 
