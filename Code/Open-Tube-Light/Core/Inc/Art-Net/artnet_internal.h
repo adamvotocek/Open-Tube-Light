@@ -3,8 +3,8 @@
  * @brief Art-Net Internal Module Interface
  * 
  * Shared types, state, and function declarations used across Art-Net
- * implementation modules (artnet.c, artnet_handlers.c, artnet_command.c,
- * artnet_pollreply.c).
+ * implementation modules (artnet.c, artnet_dmx.c, artnet_handlers.c,
+ * artnet_command.c, artnet_pollreply.c).
  * 
  * @note Only include from artnet_*.c files — use artnet.h for application code.
  */
@@ -115,21 +115,21 @@ typedef struct {
     bool initialized;                       ///< Module initialized
 } ArtNet_Context_t;
 
-/* ========================== Shared State (defined in artnet.c) ========================== */
+/* ========================== Shared State (artnet.c, buffers in artnet_dmx.c) ========================== */
 
 /** @brief Global Art-Net context */
 extern ArtNet_Context_t g_artnet_ctx;
 
 /** @brief Shadow DMX buffers for incoming data */
-extern uint8_t g_artnet_shadow_buffer[][ARTNET_DMX_MAX_LENGTH];
+extern uint8_t g_artnet_shadow_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH];
 
 /** @brief Active DMX buffers for rendering */
-extern uint8_t g_artnet_active_buffer[][ARTNET_DMX_MAX_LENGTH];
+extern uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH];
 
 /* ========================== Internal Functions - Packet Handlers ========================== */
 
 /**
- * @brief Handle incoming ArtDmx (OpOutput) packet
+ * @brief Handle incoming ArtDmx (OpOutput) packet (artnet_dmx.c)
  */
 void ArtNet_HandleArtDmx(const ArtNet_ArtDmx_t *pkt, uint16_t len, const ip_addr_t *src_ip);
 
@@ -146,7 +146,7 @@ void ArtNet_HandleArtCommand(const ArtNet_ArtCommand_t *pkt, uint16_t len,
                             const ip_addr_t *src_ip, u16_t src_port);
 
 /**
- * @brief Handle incoming ArtSync packet
+ * @brief Handle incoming ArtSync packet (artnet_dmx.c)
  */
 void ArtNet_HandleArtSync(const ip_addr_t *src_ip);
 

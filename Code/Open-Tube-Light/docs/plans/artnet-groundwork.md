@@ -1,6 +1,6 @@
 # Plan: Art-Net groundwork (always-on node, file split, 6 s failsafe)
 
-**Status (2026-11-14):** commit 1 done (bench 57/57 with Lightkey), commits 2–4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
+**Status (2026-11-14):** commits 1–2 done (each bench 57/57 with Lightkey), commits 3–4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
 
 ## In short
 
@@ -60,7 +60,7 @@ Four commits, each built and bench-tested before the next. The first two are **p
 1. New `Core/Src/Art-Net/artnet_dmx.c`. Move these into it:
    - from `artnet.c`: `g_artnet_shadow_buffer`, `g_artnet_active_buffer`, `ArtNet_GetUniverseData`, `ArtNet_LatchData`, `ArtNet_TriggerFrameOutput`, the `dmx_input_artnet` vtable
    - from `artnet_handlers.c`: `ArtNet_HandleArtDmx`, `ArtNet_HandleArtSync`
-2. `ArtNet_Init/Deinit` stay in `artnet.c` for now. The vtable keeps pointing at them through their existing declarations.
+2. `ArtNet_Init/Deinit` stay in `artnet.c` for now. The vtable keeps pointing at them through their existing declarations. They clear the buffers with `sizeof`, so the `extern` declarations in `artnet_internal.h` now carry the full array size (the compiler then also checks them against the definition).
 3. Add it to `target_sources`.
 
 ### Commit 3: always-on node, switchable data part

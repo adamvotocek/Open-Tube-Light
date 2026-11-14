@@ -6,7 +6,7 @@ How the protocol-agnostic input layer works and how to add a new source (e.g. sA
 
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│ EffectTask       │────▶│  dmx_input.c     │────▶│  artnet.c        │  DMX_INPUT_ARTNET
+│ EffectTask       │────▶│  dmx_input.c     │────▶│  artnet_dmx.c    │  DMX_INPUT_ARTNET
 │  (main.c) Latch  │     │  (manager,       │     │  dmx512_uart.c   │  DMX_INPUT_DMX512
 │ pixel_render.c   │     │   vtable)        │     │  sacn.c          │  DMX_INPUT_SACN (not implemented)
 │  GetUniverse     │     │                  │     │                  │

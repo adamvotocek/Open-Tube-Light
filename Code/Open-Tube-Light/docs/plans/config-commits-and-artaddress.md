@@ -140,7 +140,7 @@ void ConfigService_Process(uint32_t timeout_ms);              // ControlTask onl
 
 ## Phase C — ArtAddress (config fields + transient commands)
 
-**Placement:** `ArtNet_HandleArtAddress()` in `artnet_handlers.c` (the protocol mapping), with a new `ArtNet_ResetUniverseState()` in `artnet.c` next to the universe state it clears. Rejected alternative: a separate `artnet_address.c`. About 150 lines doesn't justify a module. The ArtCommand parser has moved out (`artnet_command.c`), so `artnet_handlers.c` has room. Use one Port-Address helper for SwOut contiguity, ArtDmx and ArtPoll (item 4).
+**Placement:** `ArtNet_HandleArtAddress()` in `artnet_handlers.c` (the protocol mapping), with a new `ArtNet_ResetUniverseState()` in `artnet_dmx.c` next to the per-universe tracking it clears. Rejected alternative: a separate `artnet_address.c`. About 150 lines doesn't justify a module. The ArtCommand parser has moved out (`artnet_command.c`), so `artnet_handlers.c` has room. Use one Port-Address helper for SwOut contiguity, ArtDmx and ArtPoll (item 4).
 
 **Accept rules**
 

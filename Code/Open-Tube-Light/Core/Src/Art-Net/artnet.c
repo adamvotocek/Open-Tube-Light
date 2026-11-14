@@ -2,12 +2,13 @@
  * @file artnet.c
  * @brief Art-Net 4 Protocol Handler - Core Module
  * 
- * Core Art-Net functionality: initialization, public API (data access),
- * UDP receive callback, packet dispatch, and buffer management.
+ * Core Art-Net functionality: initialization, UDP receive callback,
+ * packet dispatch, NodeReport, reply sending.
  * 
  * Packet-specific handling is delegated to:
- * - artnet_handlers.c: ArtDmx, ArtPoll, ArtSync, ArtAddress, ArtInput,
- *   ArtDataRequest handlers
+ * - artnet_dmx.c: data part (ArtDmx, ArtSync, DMX buffers, latch,
+ *   dmx_input driver vtable)
+ * - artnet_handlers.c: ArtPoll, ArtAddress, ArtInput, ArtDataRequest
  * - artnet_command.c: ArtCommand (custom OpenTubeDia verbs)
  * - artnet_pollreply.c: ArtPollReply construction, transmission and
  *   immediate replies
@@ -18,7 +19,6 @@
  */
 
 #include "Art-Net/artnet_internal.h"
-#include "DMX-Input/dmx_input.h"
 #include "main.h"
 #include "lwip/udp.h"
 #include "lwip/tcpip.h"
@@ -38,24 +38,6 @@ ArtNet_Context_t g_artnet_ctx = {0};
  * to be ignored, so they do not touch the NodeReport.
  */
 uint32_t artnet_ignored_count = 0;
-
-/**
- * @brief Shadow buffers for incoming DMX data
- * 
- * Incoming ArtDmx packets write here. Data moves to active_buffer
- * when ArtNet_LatchData() is called by the processing task.
- * Placed in DTCM (.DMX_Buffers) for fast CPU access.
- */
-uint8_t g_artnet_shadow_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
-    __attribute__((section(".DMX_Buffers"), aligned(32)));
-
-/**
- * @brief Active buffers read by the processing task during rendering
- * 
- * Double-buffering ensures stable data throughout the render cycle.
- */
-uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
-    __attribute__((section(".DMX_Buffers"), aligned(32)));
 
 /* ========================== Private Function Prototypes ========================== */
 
@@ -172,24 +154,6 @@ void ArtNet_Deinit(void)
 
     g_artnet_ctx.processing_task = NULL;
     g_artnet_ctx.initialized = false;
-}
-
-const uint8_t* ArtNet_GetUniverseData(uint8_t universe)
-{
-    if (universe >= DeviceConfig_GetUniverseCount()) {
-        return NULL;
-    }
-    return g_artnet_active_buffer[universe];
-}
-
-void ArtNet_LatchData(void)
-{
-    uint8_t num_universes = DeviceConfig_GetUniverseCount();
-    
-    osMutexAcquire(g_artnet_ctx.shadow_mutex, osWaitForever);
-    memcpy(g_artnet_active_buffer, g_artnet_shadow_buffer, 
-           num_universes * ARTNET_DMX_MAX_LENGTH);
-    osMutexRelease(g_artnet_ctx.shadow_mutex);
 }
 
 /* ========================== Network Layer Implementation ========================== */
@@ -385,24 +349,6 @@ uint32_t ArtNet_PrngNext(void)
     g_artnet_ctx.prng_state = x;
     return x;
 }
-
-void ArtNet_TriggerFrameOutput(void)
-{
-    // Notify processing task
-    if (g_artnet_ctx.processing_task != NULL) {
-        osThreadFlagsSet(g_artnet_ctx.processing_task, DMX_INPUT_FLAG_FRAME_READY);
-    }
-}
-
-/* ========================== DMX Input Driver Vtable ========================== */
-
-const DMX_Input_Driver_t dmx_input_artnet = {
-    .init                = ArtNet_Init,
-    .deinit              = ArtNet_Deinit,
-    .latch               = ArtNet_LatchData,
-    .get_universe        = ArtNet_GetUniverseData,
-    .failsafe_timeout_ms = ARTNET_FAILSAFE_TIMEOUT_MS,
-};
 
 /* ========================== Private Functions ========================== */
 
