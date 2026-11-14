@@ -10,11 +10,12 @@ build/
 .project
 .cproject
 
-# ── Docs kept local: copyrighted specs/manuals and working drafts ────
+# ── Docs kept local: copyrighted specs/manuals ────────────────────────
 # Third-party specs and datasheets (copyrighted — never commit)
 docs/reference/
-# AI-assisted design drafts
-docs/plans/
 
 # ── Per-machine tooling ───────────────────────────────────────────────
 .claude/settings.local.json
+
+# ── Python bytecode (tools/) ───────────────────────────────────────────
+__pycache__/

@@ -8,5 +8,5 @@ desktop.ini
 .DS_Store
 Code/Open-Tube-Light.code-workspace
 
-# ── Temporary testing files ─────────────────────────────────────────────────
-Temporary_Tests/
+# ── Local lighting-software scenes (Lightkey, QLC+) ──────────────────────
+Temp_Scenes/
