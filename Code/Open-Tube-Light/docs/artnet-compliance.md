@@ -235,7 +235,7 @@ Everything else (merge, DHCP/2.x, ArtIpProg, diagnostics, DataRequest, sACN sele
 ## 12. Suggested order
 
 1. ~~**Quick fixes, no infrastructure:** section 10 items 1–2; Status1 indicator = 11 (normal); ArtInput → ArtPollReply; ArtDataRequest.~~ Done.
-2. **Groundwork (decided 2026-11-14):** **11.4 control-plane split** and moving the ArtCommand parser into `artnet_command.c` (`plans/artnet-audit-followups.md` items 1 and 3), plus the 6 s failsafe timeout (item 11).
+2. **Groundwork (decided 2026-11-14):** **11.4 control-plane split** and moving the ArtCommand parser into `artnet_command.c` (`plans/artnet-audit-followups.md` items 1 and 3), plus the 6 s failsafe timeout (item 11). Plan: `plans/artnet-groundwork.md`.
 3. **11.1 → ArtAddress** first slice (runtime-only), with 11.8 for AcLed*/AcClearOp0, plus 11.5/11.6 for Flags bit 1. Plan: `plans/config-commits-and-artaddress.md`.
 4. **11.2 persistence** (`plans/flash-persistence.md`), then AcFail* is fully compliant and Status3 bit 5 can be set.
 5. **11.3 network** (DHCP, static IP from config, 2.x fallback), then ArtIpProg. Before RDM: the node is fixed at 2.x.y.z/8 today, and this is much smaller than RDM.

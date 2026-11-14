@@ -5,7 +5,7 @@ The config-service step of the post-quick-wins order: `artnet-compliance.md` §1
 **Out of scope:** flash persistence, network/DHCP, runtime input-source switching, Art-Net control plane in DMX512 mode, merge engine, sACN, RDM.
 
 **Before starting, read `artnet-audit-followups.md` items 1–3.** They change the shape of Phase B:
-- **Decided 2026-11-14, groundwork first:** the control-plane split (11.4, item 1) and moving the ArtCommand parser to `artnet_command.c` as a pure move commit (item 3) land **before** Phase A/B.
+- **Decided 2026-11-14, groundwork first:** the control-plane split (11.4, item 1) and moving the ArtCommand parser to `artnet_command.c` as a pure move commit (item 3) land **before** Phase A/B (`artnet-groundwork.md`).
 - Still to fold into Phase B when it is written in detail: Art-Net-owned reply slots with an opaque cookie instead of `ipv4/port/kind/hint` (item 2).
 
 OpenTubeDia's custom protocol is transitional. RDM over Art-Net replaces its config verbs after persistence and network configuration exist (roadmap), and OpenTubeDia is then deprecated. Lightkey has no RDM, so the custom verbs stay until then, but nothing in this plan extends them.

@@ -34,7 +34,7 @@ Findings from the Art-Net code and docs audit (2026-11-14) that the cleanup comm
 - **Data part:** the `dmx_input` driver only enables ArtDmx/ArtSync processing and owns the buffers.
 - **DMX512 mode:** NumPorts = 0, or GoodOutputA.7 = 0.
 
-The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and the Phase E events have one fixed home. **Slot: decided 2026-11-14, groundwork first.** Do this, together with item 3, before Phase B.
+The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and the Phase E events have one fixed home. **Slot: decided 2026-11-14, groundwork first.** Do this, together with item 3, before Phase B. Plan: `artnet-groundwork.md`.
 
 ### 2. Config service: let Art-Net own its reply slots
 
@@ -46,7 +46,7 @@ The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and
 
 **Finding.** `artnet_handlers.c` is about 900 lines, past the 800-line split threshold in the plan, and about 400 of them are the transitional ArtCommand text parser.
 
-**Recommendation.** Move `ArtNet_HandleArtCommand` and its parser helpers into `artnet_command.c` as a pure move commit before Phase B. Phase B rewrites this handler, so the move keeps that diff readable, and the later RDM deprecation becomes a one-file delete. **Slot: decided 2026-11-14, groundwork first.** A separate pure-move commit, with item 1, before Phase B.
+**Recommendation.** Move `ArtNet_HandleArtCommand` and its parser helpers into `artnet_command.c` as a pure move commit before Phase B. Phase B rewrites this handler, so the move keeps that diff readable, and the later RDM deprecation becomes a one-file delete. **Slot: decided 2026-11-14, groundwork first.** A separate pure-move commit, with item 1, before Phase B. Plan: `artnet-groundwork.md`.
 
 ### 4. One Port-Address mapping helper
 
@@ -58,7 +58,7 @@ The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and
 
 **Finding.** Only `artnet_internal.h` includes `artnet.h`. The module's real public surface is the `dmx_input_artnet` symbol, yet `artnet.h` exposes `ArtNet_UniverseState_t` and LwIP types.
 
-**Recommendation.** Move `ArtNet_UniverseState_t` into `artnet_internal.h`. Leave `artnet.h` with what `main.c` / `ControlTask` will call after the split (`ArtNet_NodeInit`, config-done entry points). **Slot:** with item 1.
+**Recommendation.** Move `ArtNet_UniverseState_t` into `artnet_internal.h`. Leave `artnet.h` with what `main.c` / `ControlTask` will call after the split (`ArtNet_NodeInit`, config-done entry points). **Slot:** with item 1 (`artnet-groundwork.md` commit 3).
 
 ### 6. Remaining unused config API
 
@@ -89,7 +89,7 @@ One malformed packet from any host leaves `#0004 RcParseFail` in every later Art
 
 ### 11. Failsafe timeout 5 s → 6 s (decided)
 
-A controller sending static data may resend only every 4 s (spec keep-alive), so 5 s tolerates almost no jitter on a keep-alive. The spec's own source-loss timeout for merging is 10 s. **Decided 2026-11-14: 6 s**, a middle ground between tolerance and a quick reaction to a lost controller. Set `ARTNET_FAILSAFE_TIMEOUT_MS` to 6000. Keep the source-lock release and the GoodOutputA freshness (`ARTNET_DISCONNECT_TIMEOUT_MS`) at 5 s, so takeover stays quick and README's merge text stays true; the static assert allows that. **Slot:** not yet implemented; a one-line change, done with the groundwork commits. Then update compliance §2, `dmx-input-drivers.md` and the bench script's monitor hint.
+A controller sending static data may resend only every 4 s (spec keep-alive), so 5 s tolerates almost no jitter on a keep-alive. The spec's own source-loss timeout for merging is 10 s. **Decided 2026-11-14: 6 s**, a middle ground between tolerance and a quick reaction to a lost controller. Set `ARTNET_FAILSAFE_TIMEOUT_MS` to 6000. Keep the source-lock release and the GoodOutputA freshness (`ARTNET_DISCONNECT_TIMEOUT_MS`) at 5 s, so takeover stays quick and README's merge text stays true; the static assert allows that. **Slot:** not yet implemented; `artnet-groundwork.md` commit 4. Then update compliance §2, `dmx-input-drivers.md` and the bench script's monitor hint.
 
 ### 12. Runtime input switching races
 
