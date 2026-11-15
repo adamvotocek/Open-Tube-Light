@@ -78,7 +78,8 @@ D-Cache is enabled. DMA cannot access DTCM (`0x20000000`). All DMA buffers **mus
 * **File Layout:** Public headers in `Core/Inc/<Module>/x.h`, source in `Core/Src/<Module>/x.c`, private shared headers in `*_internal.h` (every module, including single-file ones like `device_config`, `dmx_input`, `pixel_render`, gets its own subfolder). Private functions are `static`: prototypes at the top of the file, definitions at the bottom, each under a `Private Functions` banner comment.
 * **Safety & Scope:** Validate pointers and packet lengths at public/network boundaries. Return `0`/`-1` or `HAL_StatusTypeDef` consistently. Keep functions under ~100 lines with a single responsibility; don't invent premature abstractions.
 * **Cleanest option first:** Before writing code, decide who *owns* it: the single consumer, or the module whose stated purpose matches. "Related by analogy" doesn't count. For non-trivial changes, state the chosen placement and the best rejected alternative in one line before implementing.
-* **Comments:** Explain what and *why* (timing constraints, MPU/DMA rules, spec citations). Use Doxygen `@brief` on public APIs.
+* **Comments:** Explain what and *why* (timing constraints, MPU/DMA rules, spec citations). Keep comments concise. Use Doxygen `@brief` on public APIs.
+* **File size:** Keep source files under ~600 lines. Split functionality into multiple files/modules if it grows larger. 
 
 ## Docs, Specs & Project State
 
