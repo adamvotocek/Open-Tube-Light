@@ -16,6 +16,7 @@ How the protocol-agnostic input layer works and how to add a new source (e.g. sA
 - **Consumers:** `EffectTask` calls `DMX_Input_Latch()` once per frame, then `pixel_render.c` reads data via `DMX_Input_GetUniverse()`.
 - **Manager** (`dmx_input.c`) resolves the driver from `config->dmx.input_source` and dispatches through the vtable. With no active driver, `DMX_Input_GetFailsafeTimeout()` returns a conservative 12000 ms.
 - **Each driver** owns its buffers, its synchronisation and its transport, and wakes `EffectTask` with thread flag `DMX_INPUT_FLAG_FRAME_READY` (`dmx_input.h`) when a new frame is ready.
+- **Input switch = input lost.** The LEDs show the SK9822 frame buffer, not the driver's buffers: `EffectTask` only renders when a frame arrives and otherwise resends the last one. After a switch the strip holds its last frame, the configured failsafe (`output.failsafe`) applies once the new driver's timeout has passed since the last frame, and the new source's first frame takes over. A switch never blacks out by itself; a dark strip is only the result of choosing `FAILSAFE_ZERO`. So drivers clear their buffers in `init` (a fresh session never shows stale universes) and leave them alone in `deinit`.
 
 | Driver | Sync between producer and `Latch()` | Producer context | Failsafe timeout |
 |---|---|---|---|
@@ -50,8 +51,14 @@ static bool initialized;
 
 static int YourProto_Init(osThreadId_t task) {
     if (initialized) return 0;
+    // Create the mutex (osMutexPrioInherit) once and never delete it:
+    // EffectTask may still be inside Latch() during a switch.
+    // Fresh session: universes not yet received read as 0, not stale data.
+    // This doesn't touch the LEDs (see "Input switch = input lost").
+    memset(shadow_buf, 0, sizeof(shadow_buf));
+    memset(active_buf, 0, sizeof(active_buf));
     notify_task = task;
-    // Create mutex (osMutexPrioInherit), bind transport, etc.
+    // Bind transport, etc.
     // On partial failure: release everything created before the failure point.
     initialized = true;
     return 0;
@@ -59,9 +66,9 @@ static int YourProto_Init(osThreadId_t task) {
 
 static void YourProto_Deinit(void) {
     if (!initialized) return;
-    // Release transport, delete mutex, zero buffers
-    memset(shadow_buf, 0, sizeof(shadow_buf));
-    memset(active_buf, 0, sizeof(active_buf));
+    // Release transport. Leave the buffers and the mutex: EffectTask may be
+    // rendering from active_buf, and the failsafe policy decides what the
+    // strip shows next.
     notify_task = NULL;
     initialized = false;
 }
@@ -97,7 +104,7 @@ osMutexRelease(shadow_mutex);
 osThreadFlagsSet(notify_task, DMX_INPUT_FLAG_FRAME_READY);
 ```
 
-- **Network (LwIP):** the UDP receive callback already runs in `tcpip_thread`; writing the shadow buffer there is fine. `init`/`deinit` run in `ControlTask`, so wrap raw LwIP calls there (`udp_new`, `udp_bind`, `udp_remove`, …) in `LOCK_TCPIP_CORE()` / `UNLOCK_TCPIP_CORE()`, as `ArtNet_Init()` does.
+- **Network (LwIP):** the UDP receive callback already runs in `tcpip_thread`; writing the shadow buffer there is fine. `init`/`deinit` run in `ControlTask`, so wrap raw LwIP calls and tcpip-owned state there in `LOCK_TCPIP_CORE()` / `UNLOCK_TCPIP_CORE()`, as `ArtNet_NodeInit()` and `ArtNet_EnableOutput/DisableOutput()` do. A protocol that must stay reachable in other input modes (Art-Net: discovery, configuration) keeps its socket in an always-on part started at boot, and lets `init`/`deinit` only switch data processing on and off.
 - **ISR at or below BASEPRI (NVIC ≥ 5):** no mutex — use a lock-free double buffer; `osThreadFlagsSet` is allowed.
 - **ISR above BASEPRI (NVIC < 5, e.g. UART5 at 3):** no FreeRTOS calls at all. Copy the DMX512 pattern: lock-free double buffer plus a software-pended lower-priority IRQ that performs the notify (`DMX512_Uart_DeferredNotify()`).
 
@@ -118,10 +125,10 @@ Add the `.c` file to `target_sources` in the root `CMakeLists.txt`.
 | Buffers in `.DMX_Buffers`, 32-byte aligned | DTCM: zero-wait-state CPU access |
 | Mutex with `osMutexPrioInherit` (task producers only) | Avoids priority inversion between `tcpip_thread` and `EffectTask` |
 | Clean up on partial init failure | No runtime `malloc`; leaked RTOS objects can't be recovered |
-| `deinit` zeros buffers | Lights go dark on protocol switch |
+| `init` zeroes the buffers, `deinit` leaves them | A new session never shows stale universes; zeroing in `deinit` could tear a frame `EffectTask` is rendering, and the failsafe policy, not the driver, decides what the strip shows after a switch |
 | Correct `failsafe_timeout_ms` | `EffectTask` uses it to detect a lost controller |
 | LwIP calls from non-tcpip threads under `LOCK_TCPIP_CORE()` or via `tcpip_callback()` | LwIP core is not thread-safe |
-| Never call `deinit` while `EffectTask` can be in `latch()` | `deinit` deletes the mutex `latch` takes; runtime switching must quiesce `EffectTask` first (`plans/artnet-audit-followups.md` item 12) |
+| Never call `deinit` while `EffectTask` can be in `latch()` | A driver that deletes its mutex there would leave `EffectTask` waiting on a deleted object, and a frame-ready flag from the old driver would make `EffectTask` render the new driver's empty buffers; runtime switching must quiesce `EffectTask` first (`plans/artnet-audit-followups.md` item 12) |
 | Universe count from `DeviceConfig_GetUniverseCount()` | Derived from segment count, format and start address |
 
 ## Config values relevant to drivers (`DeviceConfig_Get()`)

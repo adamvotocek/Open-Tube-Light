@@ -22,7 +22,7 @@ Findings from the Art-Net code and docs audit (2026-11-14) that the cleanup comm
 
 ## Architecture
 
-### 1. Pull the control/data-plane split (compliance 11.4) forward
+### 1. Pull the control/data-plane split (compliance 11.4) forward (done)
 
 **Finding.** `dmx_input_artnet.init/deinit` creates and destroys the UDP socket, poll timer, mutex and node state. The Art-Net node only exists while Art-Net is the input source. Three planned features depend on a node that is always there:
 - Phase E (reply on change) hooks a `dmx_input` callback that only fires in Art-Net mode.
@@ -34,7 +34,7 @@ Findings from the Art-Net code and docs audit (2026-11-14) that the cleanup comm
 - **Data part:** the `dmx_input` driver only enables ArtDmx/ArtSync processing and owns the buffers.
 - **DMX512 mode:** NumPorts = 0, or GoodOutputA.7 = 0.
 
-The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and the Phase E events have one fixed home. **Slot: decided 2026-11-14, groundwork first.** Do this, together with item 3, before Phase B. Plan: `artnet-groundwork.md`.
+The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and the Phase E events have one fixed home. **Done 2026-11-14** (`artnet-groundwork.md` commit 3): `ArtNet_NodeInit()` at boot, `ArtNet_EnableOutput/DisableOutput()` as the driver's init/deinit, NumPorts = 0 in DMX512 mode.
 
 ### 2. Config service: let Art-Net own its reply slots
 
@@ -54,11 +54,11 @@ The socket is then never removed at runtime, and `ArtNet_ResetUniverseState` and
 
 **Recommendation.** Add `ArtNet_PortAddress(cfg, i)` and `ArtNet_PortIndexOf(cfg, pa)` in `artnet_internal.h` and use them everywhere. The 288-pixel / multi-bind work (11.9) then changes one place. **Slot:** Phase C.
 
-### 5. Narrow `artnet.h`
+### 5. Narrow `artnet.h` (done)
 
 **Finding.** Only `artnet_internal.h` includes `artnet.h`. The module's real public surface is the `dmx_input_artnet` symbol, yet `artnet.h` exposes `ArtNet_UniverseState_t` and LwIP types.
 
-**Recommendation.** Move `ArtNet_UniverseState_t` into `artnet_internal.h`. Leave `artnet.h` with what `main.c` / `ControlTask` will call after the split (`ArtNet_NodeInit`, config-done entry points). **Slot:** with item 1 (`artnet-groundwork.md` commit 3).
+**Recommendation.** Move `ArtNet_UniverseState_t` into `artnet_internal.h`. Leave `artnet.h` with what `main.c` / `ControlTask` will call after the split (`ArtNet_NodeInit`, config-done entry points). **Done** with item 1: `artnet.h` only declares `ArtNet_NodeInit()` and no longer includes LwIP headers.
 
 ### 6. Remaining unused config API
 
@@ -93,7 +93,7 @@ A controller sending static data may resend only every 4 s (spec keep-alive), so
 
 ### 12. Runtime input switching races
 
-`DMX_Input_Start/Stop` call `deinit()` while `EffectTask` may be inside `latch()` (Art-Net deletes its mutex), and `active_driver` is not published atomically. Nothing switches at runtime today. **Recommendation:** when the UI adds switching, quiesce `EffectTask` first (a flag plus a handshake, or do the switch from `EffectTask` itself), then swap the driver. With item 1 done, the Art-Net socket is not touched by a switch at all. **Slot:** UI / input switching step.
+`DMX_Input_Start/Stop` call `deinit()`/`init()` while `EffectTask` may be inside `latch()` or rendering, and `active_driver` is not published atomically. Since item 1 Art-Net's mutex is never deleted, and since groundwork commit 3 neither driver zeroes its buffers in `deinit` (switch = input lost, `dmx-input-drivers.md`), so the strip holds its last frame. Two races remain: (a) `EffectTask` reads `active_driver` once per universe, so one frame can mix the old and the new driver; (b) a stale frame-ready flag: the old driver sets `DMX_INPUT_FLAG_FRAME_READY` just before the switch, `EffectTask` wakes, latches from the *new* driver and renders its zeroed buffers, which blacks out the strip until the new source sends a frame or the failsafe fires. Nothing switches at runtime today. **Recommendation:** when the UI adds switching, quiesce `EffectTask` first (a flag plus a handshake, or do the switch from `EffectTask` itself), clear the pending frame flag (`osThreadFlagsClear` from `EffectTask`, or ignore a frame flag that predates the switch), then swap the driver. With item 1 done, the Art-Net socket is not touched by a switch at all. **Slot:** UI / input switching step.
 
 ### 13. Flash persistence: erase-stall policy (decided)
 

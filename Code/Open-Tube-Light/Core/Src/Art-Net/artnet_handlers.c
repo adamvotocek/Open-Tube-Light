@@ -55,7 +55,8 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
         }
 
         const DeviceConfig_t *config = DeviceConfig_Get();
-        uint8_t num_universes = DeviceConfig_GetUniverseCount();
+        // No ports while Art-Net is not the input source: nothing matches
+        uint8_t num_ports = ArtNet_GetPortCount();
         
         uint16_t target_top = ((uint16_t)pkt->target_pa_top_hi << 8)
                             | pkt->target_pa_top_lo;
@@ -63,7 +64,7 @@ void ArtNet_HandleArtPoll(const ArtNet_ArtPoll_t *pkt, uint16_t len,
                             | pkt->target_pa_bot_lo;
         
         bool in_range = false;
-        for (int i = 0; i < num_universes; i++) {
+        for (int i = 0; i < num_ports; i++) {
             uint16_t pa = ARTNET_BUILD_PORT_ADDRESS(
                 config->dmx.artnet_net,
                 config->dmx.artnet_subnet,

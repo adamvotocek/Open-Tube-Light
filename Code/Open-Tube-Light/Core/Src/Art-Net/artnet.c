@@ -2,8 +2,11 @@
  * @file artnet.c
  * @brief Art-Net 4 Protocol Handler - Core Module
  * 
- * Core Art-Net functionality: initialization, UDP receive callback,
- * packet dispatch, NodeReport, reply sending.
+ * The always-on Art-Net node: started once at boot by ArtNet_NodeInit() and
+ * never torn down. UDP socket, receive callback and packet dispatch,
+ * NodeReport, reply sending. Discovery and configuration answer in every DMX
+ * input mode; ArtDmx/ArtSync are only processed while the data part
+ * (artnet_dmx.c) is the active dmx_input driver.
  * 
  * Packet-specific handling is delegated to:
  * - artnet_dmx.c: data part (ArtDmx, ArtSync, DMX buffers, latch,
@@ -34,8 +37,9 @@ ArtNet_Context_t g_artnet_ctx = {0};
  *
  * Counts UDP datagrams on port 0x1936 that are too short to be Art-Net,
  * arrive as a chained pbuf, or carry an opcode this node does not handle
- * (other nodes' ArtPollReply, ArtTimeCode, RDM, ...). The spec requires these
- * to be ignored, so they do not touch the NodeReport.
+ * (other nodes' ArtPollReply, ArtTimeCode, RDM, ...), plus ArtDmx/ArtSync while
+ * Art-Net is not the DMX input source. The spec requires these to be ignored,
+ * so they do not touch the NodeReport.
  */
 uint32_t artnet_ignored_count = 0;
 
@@ -46,33 +50,27 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
 static const char *ArtNet_NodeReportDefaultDetail(uint16_t code);
 static uint32_t ArtNet_PrngSeed(void);
 
-/* ========================== Public API Implementation ========================== */
+/* ========================== Node Start ========================== */
 
-int ArtNet_Init(osThreadId_t processing_task_handle)
+int ArtNet_NodeInit(void)
 {
     if (g_artnet_ctx.initialized) {
         return 0;
     }
-    
-    g_artnet_ctx.processing_task = processing_task_handle;
-    
-    // Zero-init clears all per-universe state (source_ip = 0.0.0.0,
-    // sync_mode = false, ticks = 0) and DMX buffers (lights off).
-    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
-    memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
-    memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
-    
-    // ArtPollReply state
-    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
-    g_artnet_ctx.poll_reply_counter = 0;
+
+    // g_artnet_ctx is zero-initialized: the data part is off (output_enabled =
+    // false), no universe has a source and the reply queue is empty.
+    // ArtNet_EnableOutput() switches ArtDmx/ArtSync on when Art-Net is the input.
     ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_POWER_OK, NULL);
-    
+
     // Per-unit seed, so fixtures powered up together pick different
     // ArtPollReply delays (the delay exists to spread their replies)
     g_artnet_ctx.prng_state = ArtNet_PrngSeed();
-    
-    // Create mutex for shadow buffer access
-    // Priority inheritance prevents inversion if task priorities diverge
+
+    // Shadow buffer lock between tcpip_thread (ArtDmx) and EffectTask (latch).
+    // Created once and never deleted, so a latch can't end up waiting on a
+    // deleted mutex when the input source changes. Priority inheritance
+    // prevents inversion if task priorities diverge.
     const osMutexAttr_t shadow_mutex_attr = {
         .name = "shadowMtx",
         .attr_bits = osMutexPrioInherit,
@@ -81,7 +79,7 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
     if (g_artnet_ctx.shadow_mutex == NULL) {
         return -1;
     }
-    
+
     // Create one-shot timer for ArtPollReply delay
     g_artnet_ctx.poll_reply_timer = osTimerNew(ArtNet_PollReplyTimerCallback, osTimerOnce, NULL, NULL);
     if (g_artnet_ctx.poll_reply_timer == NULL) {
@@ -89,7 +87,7 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
         g_artnet_ctx.shadow_mutex = NULL;
         return -1;
     }
-    
+
     // Create the UDP PCB and bind to the Art-Net port. Raw LwIP API from a
     // task: hold the core lock so tcpip_thread is not inside LwIP meanwhile.
     LOCK_TCPIP_CORE();
@@ -116,44 +114,6 @@ int ArtNet_Init(osThreadId_t processing_task_handle)
 
     g_artnet_ctx.initialized = true;
     return 0;
-}
-
-void ArtNet_Deinit(void)
-{
-    if (!g_artnet_ctx.initialized) {
-        return;
-    }
-    
-    // Stop receiving — must happen first to prevent callbacks during teardown.
-    // Under the core lock: raw LwIP API, and tcpip_thread owns the state below.
-    LOCK_TCPIP_CORE();
-    if (g_artnet_ctx.pcb != NULL) {
-        udp_remove(g_artnet_ctx.pcb);
-        g_artnet_ctx.pcb = NULL;
-    }
-    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
-    memset(&g_artnet_ctx.reply_queue, 0, sizeof(ArtNet_PollReplyQueue_t));
-    memset(&g_artnet_ctx.node_report, 0, sizeof(ArtNet_NodeReportState_t));
-    UNLOCK_TCPIP_CORE();
-
-    // Cancel any pending poll reply timer
-    if (g_artnet_ctx.poll_reply_timer != NULL) {
-        osTimerStop(g_artnet_ctx.poll_reply_timer);
-        osTimerDelete(g_artnet_ctx.poll_reply_timer);
-        g_artnet_ctx.poll_reply_timer = NULL;
-    }
-    
-    if (g_artnet_ctx.shadow_mutex != NULL) {
-        osMutexDelete(g_artnet_ctx.shadow_mutex);
-        g_artnet_ctx.shadow_mutex = NULL;
-    }
-    
-    // Zero buffers so lights go dark on protocol switch
-    memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
-    memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
-
-    g_artnet_ctx.processing_task = NULL;
-    g_artnet_ctx.initialized = false;
 }
 
 /* ========================== Network Layer Implementation ========================== */
@@ -202,7 +162,10 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
     // Dispatch to appropriate handler
     switch (opcode) {
         case ARTNET_OP_DMX:
-            if (p->tot_len >= ARTNET_DMX_HEADER_LENGTH) {
+            if (!g_artnet_ctx.output_enabled) {
+                // Art-Net is not the DMX input source
+                artnet_ignored_count++;
+            } else if (p->tot_len >= ARTNET_DMX_HEADER_LENGTH) {
                 ArtNet_HandleArtDmx((const ArtNet_ArtDmx_t *)data, p->tot_len, addr);
             } else {
                 ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
@@ -216,7 +179,9 @@ static void ArtNet_UdpReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbu
             break;
             
         case ARTNET_OP_SYNC:
-            if (p->tot_len >= sizeof(ArtNet_ArtSync_t)) {
+            if (!g_artnet_ctx.output_enabled) {
+                artnet_ignored_count++;  // Same as ArtDmx above
+            } else if (p->tot_len >= sizeof(ArtNet_ArtSync_t)) {
                 ArtNet_HandleArtSync(addr);
             } else {
                 ArtNet_NodeReportSet(ARTNET_NODE_REPORT_RC_PARSE_FAIL,
@@ -338,6 +303,12 @@ void ArtNet_SendReply(struct pbuf *p, const ip_addr_t *addr, u16_t src_port)
         udp_sendto(g_artnet_ctx.pcb, copy, addr, src_port);
         pbuf_free(copy);
     }
+}
+
+uint8_t ArtNet_GetPortCount(void)
+{
+    // No Art-Net ports while another source drives the strip
+    return g_artnet_ctx.output_enabled ? DeviceConfig_GetUniverseCount() : 0U;
 }
 
 uint32_t ArtNet_PrngNext(void)

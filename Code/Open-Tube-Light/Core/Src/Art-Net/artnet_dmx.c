@@ -2,7 +2,9 @@
  * @file artnet_dmx.c
  * @brief Art-Net data part: ArtDmx/ArtSync reception and the dmx_input driver
  *
- * Owns everything that only matters while Art-Net is the DMX input source:
+ * Owns everything that only matters while Art-Net is the DMX input source.
+ * dmx_input switches it on and off (ArtNet_EnableOutput/DisableOutput); the
+ * Art-Net node in artnet.c keeps running either way. This part owns
  * the shadow/active DMX buffers, the per-universe source/sequence/sync
  * tracking driven by ArtDmx and ArtSync, the latch for EffectTask, and the
  * dmx_input_artnet vtable.
@@ -14,6 +16,7 @@
 
 #include "Art-Net/artnet_internal.h"
 #include "DMX-Input/dmx_input.h"
+#include "lwip/tcpip.h"
 #include "cmsis_os.h"
 #include <string.h>
 
@@ -36,6 +39,48 @@ uint8_t g_artnet_shadow_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGT
  */
 uint8_t g_artnet_active_buffer[DEVICE_CONFIG_MAX_UNIVERSES][ARTNET_DMX_MAX_LENGTH] 
     __attribute__((section(".DMX_Buffers"), aligned(32)));
+
+/* ========================== Output Enable / Disable (ControlTask) ========================== */
+
+int ArtNet_EnableOutput(osThreadId_t processing_task_handle)
+{
+    if (!g_artnet_ctx.initialized) {
+        return -1;  // Node not running (ArtNet_NodeInit failed or not called)
+    }
+
+    // Fresh session: universes that haven't arrived yet read as 0, not as
+    // stale data from an earlier session. This doesn't touch the LEDs:
+    // EffectTask only renders on a new frame and otherwise resends the last
+    // one. Done before enabling, so a frame arriving right after is not wiped.
+    osMutexAcquire(g_artnet_ctx.shadow_mutex, osWaitForever);
+    memset(g_artnet_shadow_buffer, 0, sizeof(g_artnet_shadow_buffer));
+    memset(g_artnet_active_buffer, 0, sizeof(g_artnet_active_buffer));
+    osMutexRelease(g_artnet_ctx.shadow_mutex);
+
+    // tcpip_thread owns the universe state and the enable flag: change them
+    // under the core lock, so no packet sees a half-switched state.
+    LOCK_TCPIP_CORE();
+    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
+    g_artnet_ctx.processing_task = processing_task_handle;
+    g_artnet_ctx.output_enabled = true;
+    UNLOCK_TCPIP_CORE();
+
+    return 0;
+}
+
+void ArtNet_DisableOutput(void)
+{
+    if (!g_artnet_ctx.initialized) {
+        return;
+    }
+
+    // Stop accepting ArtDmx/ArtSync first, then forget the sources
+    LOCK_TCPIP_CORE();
+    g_artnet_ctx.output_enabled = false;
+    memset(&g_artnet_ctx.universes, 0, sizeof(g_artnet_ctx.universes));
+    g_artnet_ctx.processing_task = NULL;
+    UNLOCK_TCPIP_CORE();
+}
 
 /* ========================== ArtDmx Handler ========================== */
 
@@ -229,8 +274,8 @@ void ArtNet_TriggerFrameOutput(void)
 /* ========================== DMX Input Driver Vtable ========================== */
 
 const DMX_Input_Driver_t dmx_input_artnet = {
-    .init                = ArtNet_Init,
-    .deinit              = ArtNet_Deinit,
+    .init                = ArtNet_EnableOutput,
+    .deinit              = ArtNet_DisableOutput,
     .latch               = ArtNet_LatchData,
     .get_universe        = ArtNet_GetUniverseData,
     .failsafe_timeout_ms = ARTNET_FAILSAFE_TIMEOUT_MS,

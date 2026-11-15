@@ -42,7 +42,9 @@ extern "C" {
  * @brief DMX input driver vtable
  * 
  * Each protocol implements this interface. All functions must be non-NULL.
- * init/deinit are called from a thread with LwIP access (for network protocols).
+ * init/deinit are called from ControlTask (network drivers may take
+ * LOCK_TCPIP_CORE). Art-Net's init/deinit only switch its data part on and
+ * off; the Art-Net node itself is started once by ArtNet_NodeInit().
  */
 typedef struct {
     /**

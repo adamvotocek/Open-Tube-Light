@@ -111,7 +111,6 @@ void ArtNet_PollReplySendCallback(void *arg)
 void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
 {
     const DeviceConfig_t *config = DeviceConfig_Get();
-    uint8_t num_universes = DeviceConfig_GetUniverseCount();
     
     // Allocate pbuf for ArtPollReply
     struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, sizeof(ArtNet_ArtPollReply_t), PBUF_RAM);
@@ -162,7 +161,7 @@ void ArtNet_SendPollReply(const ip_addr_t *addr, u16_t port)
     
     // ===== PORTS =====
     uint32_t now = osKernelGetTickCount();
-    uint8_t num_ports = num_universes;
+    uint8_t num_ports = ArtNet_GetPortCount();  // 0 while Art-Net is not the input
     reply->num_ports_hi = 0;  // Reserved
     reply->num_ports_lo = num_ports;
     

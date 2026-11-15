@@ -30,15 +30,16 @@ cube-cmake --build --preset Debug  # Build -> build/Debug/Open-Tube-Light.elf
 ## Architecture & Module Map
 
 ```text
-Art-Net (UDP, tcpip_thread) ─┐
-                             ├─> dmx_input (vtable) ─> EffectTask ─> pixel_render ─> SK9822 SPI DMA
-DMX512 (UART5 ISR + DMA) ────┘
+Art-Net node (UDP 0x1936, tcpip_thread): always on, discovery + config in every input mode
+  └─ data part (ArtDmx/ArtSync) ─┐
+                                 ├─> dmx_input (vtable) ─> EffectTask ─> pixel_render ─> SK9822 SPI DMA
+DMX512 (UART5 ISR + DMA) ────────┘
 ```
 
 * `Core/Src/main.c`: Startup, `ControlTaskRun`, `EffectTaskRun`, OLED status, HAL callbacks.
 * `Core/Src/Device-Config/device_config.c/.h`: Config schema, defaults, validation, atomic patch/commit (`DeviceConfig_ApplyPatch`).
 * `Core/Src/DMX-Input/dmx_input.c/.h`: Protocol-agnostic input manager (`DMX_Input_Driver_t` vtable).
-* `Core/Src/Art-Net/`: `artnet.c` (UDP/init, dispatcher, NodeReport), `artnet_dmx.c` (data part: ArtDmx/ArtSync, DMX buffers, latch, `dmx_input_artnet` vtable), `artnet_handlers.c` (ArtPoll/Address/Input/DataRequest), `artnet_command.c` (transitional OpenTubeDia ArtCommand parser), `artnet_pollreply.c` (ArtPollReply + immediate replies), `artnet_internal.h` (`g_artnet_ctx`).
+* `Core/Src/Art-Net/`: `artnet.c` (always-on node: `ArtNet_NodeInit`, UDP socket, dispatcher, NodeReport), `artnet_dmx.c` (data part, switched by `ArtNet_EnableOutput/DisableOutput`: ArtDmx/ArtSync, DMX buffers, latch, `dmx_input_artnet` vtable), `artnet_handlers.c` (ArtPoll/Address/Input/DataRequest), `artnet_command.c` (transitional OpenTubeDia ArtCommand parser), `artnet_pollreply.c` (ArtPollReply + immediate replies), `artnet_internal.h` (`g_artnet_ctx`).
 * `Core/Src/DMX512/dmx512_uart.c`: Break via framing error, EoP via IDLE, lock-free double buffer.
 * `Core/Src/Pixel-Render/pixel_render.c`: DMX -> segment -> LED mapping, failsafe, idle refresh.
 * `Core/Src/SK9822/sk9822.c`: Ping-pong SPI DMA driver (`BeginFrame` / `SetLed` / `EndFrame` / `Refresh`).
@@ -54,8 +55,8 @@ Always verify execution context before calling RTOS or LwIP APIs:
 | --- | --- | --- |
 | **UART5 ISR** | NVIC 3 (Above `configMAX_SYSCALL_INTERRUPT_PRIORITY` = 5) | Runs `DMX512_Uart_IRQHandler`. **NEVER call FreeRTOS APIs here.** Defer notifications by software-pending `DMA1_Stream1_IRQn` (`DMX512_Uart_DeferredNotify()`). Keep execution ultra-short. |
 | **DMA/SPI/I2C ISRs** | NVIC 5 | HAL callbacks, `SK9822_OnTxComplete`. Non-blocking `osThreadFlagsSet` is allowed. |
-| **`tcpip_thread`** | LwIP (2048B stack) | Runs Art-Net UDP callbacks & handlers. **Only context allowed to call raw LwIP APIs.** Other threads must use `tcpip_callback()` or hold `LOCK_TCPIP_CORE()` (as `ArtNet_Init/Deinit` do). Watch stack usage (no large stack buffers or heavy `snprintf`). |
-| **`ControlTask`** | BelowNormal | Control plane: `MX_LWIP_Init`, input driver init, 1 Hz OLED refresh, config commits, UI. |
+| **`tcpip_thread`** | LwIP (2048B stack) | Runs Art-Net UDP callbacks & handlers. **Only context allowed to call raw LwIP APIs.** Other threads must use `tcpip_callback()` or hold `LOCK_TCPIP_CORE()` (as `ArtNet_NodeInit` and `ArtNet_EnableOutput/DisableOutput` do). Watch stack usage (no large stack buffers or heavy `snprintf`). |
+| **`ControlTask`** | BelowNormal | Control plane: `MX_LWIP_Init`, `ArtNet_NodeInit`, input driver init, 1 Hz OLED refresh, config commits, UI. |
 | **`EffectTask`** | AboveNormal | Real-time render path. Waits on flag `0x01` (150 ms timeout) after `ControlTask` sets start flag `0x02`. **Never mutate config here.** |
 
 ## Memory Placement & DMA Coherency

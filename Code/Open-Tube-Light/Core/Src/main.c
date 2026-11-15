@@ -28,6 +28,7 @@
 #include "Pixel-Render/pixel_render.h"
 #include "Device-Config/device_config.h"
 #include "DMX-Input/dmx_input.h"
+#include "Art-Net/artnet.h"
 #include "stm32h7xx_hal_gpio.h"
 #include "stm32h7xx_hal_uart.h"
 #include "OLED/ssd1306.h"
@@ -644,6 +645,11 @@ void ControlTaskRun(void *argument)
   // - BUTTON2: DOWN
   // - BUTTON3: MENU/BACK
   // - BUTTON4: ENTER/SELECT
+
+  // Art-Net node: always on, so discovery and ArtCommand work in every input
+  // mode. If it fails (LwIP out of memory), DMX512 still works and starting
+  // the Art-Net input below fails as well.
+  (void)ArtNet_NodeInit();
 
   // Start the configured DMX input source (Art-Net, sACN, or DMX512)
   const DeviceConfig_t *cfg = DeviceConfig_Get();

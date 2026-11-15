@@ -16,6 +16,7 @@ Usage
     python tools/artnet_bench_test.py ignored --repeat 50
     python tools/artnet_bench_test.py monitor             # GoodOutputA live view; Enter = marker, Ctrl+C = stop
     python tools/artnet_bench_test.py -i                  # pause before each test (Live Watch / Wireshark)
+    python tools/artnet_bench_test.py --node 2.x.y.z --mode dmx512   # tube booted with DMX512 as input
 
 Tests
 -----
@@ -26,6 +27,15 @@ Tests
     replyport  reply copies on 6454 and on the source port (needs 6454 free on this PC)
     parsefail  short ArtInput / ArtDataRequest -> RcParseFail, then restored via ArtCommand
     monitor    (not in "all") poll every second, print GoodOutputA per port and its transitions
+
+Modes
+-----
+    --mode artnet  (default) Art-Net is the tube's DMX input: NumPorts >= 1.
+    --mode dmx512  the tube runs with DMX512 as input. The Art-Net node must still
+                   answer everything above, with NumPorts = 0, and 'ignored' also sends
+                   ArtDmx / ArtSync (incl. a truncated ArtDmx), which must be dropped
+                   silently. Needs a build that boots in DMX512 mode
+                   (docs/plans/artnet-groundwork.md, commit 3 verification).
 
 Not testable over the network: Port-Address 0 rejection (ArtAddress is still a stub and
 ArtCommand has no universe verb).
@@ -48,6 +58,8 @@ OP_POLL_REPLY = 0x2100
 OP_COMMAND = 0x2400
 OP_DATA_REQUEST = 0x2700
 OP_DATA_REPLY = 0x2800
+OP_DMX = 0x5000
+OP_SYNC = 0x5200
 OP_INPUT = 0x7000
 
 POLL_WINDOW_S = 1.5    # ArtPollReply is delayed 0..1 s at random
@@ -86,6 +98,17 @@ def pkt_command(text):
     return art(OP_COMMAND, PROT_VER + b"\xff\xff" + struct.pack(">H", len(data)) + data)
 
 
+def pkt_dmx(port_address, length, level):
+    # ProtVer, Sequence 0, Physical, SubUni, Net, Length(2, big-endian), Data = 18 B + length
+    return art(OP_DMX, PROT_VER + bytes([0x00, 0x00, port_address & 0xFF, (port_address >> 8) & 0x7F])
+               + struct.pack(">H", length) + bytes([level]) * length)
+
+
+def pkt_sync():
+    # ProtVer, Aux1, Aux2 = 14 B
+    return art(OP_SYNC, PROT_VER + bytes(2))
+
+
 # Packets the node must drop silently (each one increments artnet_ignored_count).
 IGNORED_PACKETS = [
     ("non-Art-Net datagram (5 B)",        b"hello"),
@@ -97,6 +120,15 @@ IGNORED_PACKETS = [
     ("OpIpProg 0xF800 (command 0)",       art(0xF800, PROT_VER + bytes(22))),
     ("OpTrigger 0x9900 (not dispatched)", art(0x9900, PROT_VER + b"\x00\x00\xff\xff" + bytes(514))),
     ("unknown opcode 0x1234",             art(0x1234, PROT_VER + bytes(8))),
+]
+
+# Added in --mode dmx512: Art-Net is not the input source, so ArtDmx and ArtSync are
+# dropped silently too, even a truncated ArtDmx (RcParseFail in Art-Net mode).
+# Port-Address 1 at 25 % white, so a broken gate would show on the strip.
+DMX512_MODE_IGNORED = [
+    ("ArtDmx to Port-Address 1 (512 ch, 25 %)", pkt_dmx(1, 512, 0x40)),
+    ("ArtDmx truncated (16 B)",                 pkt_dmx(1, 512, 0x40)[:16]),
+    ("ArtSync",                                 pkt_sync()),
 ]
 
 
@@ -173,8 +205,9 @@ class Rx:
 
 
 class Tester:
-    def __init__(self, node, bind_ip, interactive):
+    def __init__(self, node, bind_ip, interactive, mode="artnet"):
         self.node = node
+        self.mode = mode
         self.bind_ip = bind_ip
         self.interactive = interactive
         self.passed = self.failed = 0
@@ -319,6 +352,10 @@ def test_poll(t):
     t.check(all(pa != 0 for pa in pr["port_addresses"]),
             f"no port uses deprecated Port-Address 0 ({pr['port_addresses']})")
     t.check(pr["node_report"] is not None, "NodeReport parses as the custom format")
+    if t.mode == "dmx512":
+        t.check(pr["num_ports"] == 0, f"NumPorts = 0 while DMX512 is the input (got {pr['num_ports']})")
+        return pr
+    t.check(pr["num_ports"] >= 1, f"NumPorts >= 1 while Art-Net is the input (got {pr['num_ports']})")
     if any(go & 0x80 for go in pr["good_output_a"][:pr["num_ports"]]):
         t.info("GoodOutputA shows DATA -> Lightkey is sending to at least one port")
     else:
@@ -327,11 +364,14 @@ def test_poll(t):
 
 
 def test_ignored(t, repeat):
-    n = len(IGNORED_PACKETS) * repeat
-    t.header("IGNORED - unhandled opcodes / junk must be dropped silently",
-             [f"Live Watch: note artnet_ignored_count now; it must rise by >= {n}",
-              "  (Lightkey's own ArtPoll/ArtPollReply broadcasts also count, so it may rise more)",
-              "Wireshark: no reply from the node to any of these packets"])
+    packets = IGNORED_PACKETS + (DMX512_MODE_IGNORED if t.mode == "dmx512" else [])
+    n = len(packets) * repeat
+    watch = [f"Live Watch: note artnet_ignored_count now; it must rise by >= {n}",
+             "  (Lightkey's own ArtPoll/ArtPollReply broadcasts also count, so it may rise more)",
+             "Wireshark: no reply from the node to any of these packets"]
+    if t.mode == "dmx512":
+        watch.append("Strip: must NOT turn 25 % white (ArtDmx is ignored in DMX512 mode)")
+    t.header("IGNORED - unhandled opcodes / junk must be dropped silently", watch)
     before, _ = t.poll()
     if not t.check(before is not None, "baseline ArtPollReply"):
         return
@@ -339,10 +379,10 @@ def test_ignored(t, repeat):
         t.info(f"NodeReport already shows RcParseFail before the test: '{before['node_report']['detail']}'")
     t.drain()
     for _ in range(repeat):
-        for _, pkt in IGNORED_PACKETS:
+        for _, pkt in packets:
             t.send(pkt)
             time.sleep(0.002)  # stay well below the node's RX pool
-    for name, _ in IGNORED_PACKETS:
+    for name, _ in packets:
         t.info(f"sent {repeat} x {name}")
     stray = t.collect(SILENCE_WINDOW_S)
     t.check(not stray, f"node did not answer any ignored packet (got {len(stray)} replies)")
@@ -580,6 +620,8 @@ def main():
     ap.add_argument("test", nargs="?", default="all",
                     choices=["all", "poll", "ignored", "input", "datareq", "replyport", "parsefail", "monitor"])
     ap.add_argument("--node", required=True, help="fixture IP, 2.x.y.z as shown on its OLED")
+    ap.add_argument("--mode", choices=["artnet", "dmx512"], default="artnet",
+                    help="the tube's DMX input source (default artnet)")
     ap.add_argument("--bind", default="", help="local IP to send from (pick the NIC on the fixture's network)")
     ap.add_argument("--repeat", type=int, default=20, help="'ignored': copies of each junk packet (default 20)")
     ap.add_argument("--interval", type=float, default=1.0, help="'monitor': poll period in s (default 1.0)")
@@ -587,8 +629,9 @@ def main():
     ap.add_argument("-i", "--interactive", action="store_true", help="pause before each test")
     args = ap.parse_args()
 
-    t = Tester(args.node, args.bind, args.interactive)
-    print(f"Node {args.node}:{ARTNET_PORT}   local {t.sock.getsockname()[0] or '0.0.0.0'}:{t.local_port}")
+    t = Tester(args.node, args.bind, args.interactive, args.mode)
+    print(f"Node {args.node}:{ARTNET_PORT}   local {t.sock.getsockname()[0] or '0.0.0.0'}:{t.local_port}"
+          f"   mode {args.mode}")
     print("Wireshark: udp.port == 6454 || udp.port == %d" % t.local_port)
 
     if args.test == "monitor":
@@ -617,8 +660,10 @@ def main():
     print("=" * 78)
     print(f" {t.passed} passed, {t.failed} failed")
     print("=" * 78)
-    if args.test == "all":
+    if args.test == "all" and args.mode == "artnet":
         print("  Next: run 'monitor' and stop Lightkey output to check GoodOutputA clears after ~5 s.")
+    elif args.test == "all":
+        print("  Live Watch: artnet_ignored_count rises with every ArtDmx; the strip ignores Art-Net.")
     return 1 if t.failed else 0
 
 

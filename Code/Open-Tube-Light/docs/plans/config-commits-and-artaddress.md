@@ -103,7 +103,7 @@ void ConfigService_Process(uint32_t timeout_ms);              // ControlTask onl
       - any bit → the OLED redraws on this loop pass
    3. `req.done(...)`
    4. Bump the counters `config_commit_count` / `config_reject_count` / `config_queue_full_count` (Live Watch).
-3. **Reject runtime input-source changes** (`DMX_SOURCE`) in `Process` for now. Nothing can request one yet. `ArtNet_Init/Deinit` already hold `LOCK_TCPIP_CORE()` around the PCB calls, but switching also needs `EffectTask` quiesced (`deinit` deletes the mutex `latch` takes, `artnet-audit-followups.md` item 12). With the control-plane split the socket is not touched by a switch at all. This is noted for the UI step.
+3. **Reject runtime input-source changes** (`DMX_SOURCE`) in `Process` for now. Nothing can request one yet. Since the control-plane split a switch no longer touches the Art-Net socket (`ArtNet_EnableOutput/DisableOutput` only toggle the data part), but it still needs `EffectTask` quiesced (`artnet-audit-followups.md` item 12). This is noted for the UI step.
 4. **`dmx_input` hook.** Add an optional vtable entry `void (*on_config_changed)(uint32_t mask)` (NULL = ignore) and `DMX_Input_OnConfigChanged()`. Update `docs/dmx-input-drivers.md`.
    - Art-Net implements it as `tcpip_callback(ArtNet_ResetUniverseState, NULL)`: clear `source_ip`, `sync_mode`, `last_sequence` for all universes, and keep the buffers (decision 3).
    - DMX512 leaves it NULL.

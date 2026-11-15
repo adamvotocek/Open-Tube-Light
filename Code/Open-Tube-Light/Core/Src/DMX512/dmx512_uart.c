@@ -173,6 +173,8 @@ static int DMX512_Uart_Init(osThreadId_t task)
 
     extern UART_HandleTypeDef huart5;
 
+    /* Fresh session: no stale frame from an earlier session. The LEDs are
+     * not affected; EffectTask only renders when a frame arrives. */
     memset(pending_buf, 0, sizeof(pending_buf));
     memset(active_buf, 0, sizeof(active_buf));
     memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
@@ -203,10 +205,6 @@ static void DMX512_Uart_Deinit(void)
     CLEAR_BIT(ctx.huart->Instance->CR3, USART_CR3_EIE);
     HAL_UART_AbortReceive(ctx.huart);
 
-    /* Zero buffers so lights go dark on protocol switch */
-    memset(pending_buf, 0, sizeof(pending_buf));
-    memset(active_buf, 0, sizeof(active_buf));
-    memset(dma_rx_buf, 0, sizeof(dma_rx_buf));
 
     NVIC_ClearPendingIRQ(DMA1_Stream1_IRQn);
 

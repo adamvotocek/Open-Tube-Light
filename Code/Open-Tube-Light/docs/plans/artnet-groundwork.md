@@ -1,6 +1,6 @@
 # Plan: Art-Net groundwork (always-on node, file split, 6 s failsafe)
 
-**Status (2026-11-14):** commits 1–2 done (each bench 57/57 with Lightkey), commits 3–4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
+**Status (2026-11-15):** commits 1–3 done (1–2 bench 57/57 with Lightkey; 3 bench 58/58 in Art-Net mode and 58/58 with `--mode dmx512`), commit 4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
 
 ## In short
 
@@ -25,7 +25,7 @@ Nothing changes for a tube in Art-Net mode: the bench script must stay at 57/57.
 | File | Owns | Today |
 |---|---|---|
 | `artnet.c` | **Node:** `ArtNet_NodeInit()`, UDP socket, dispatcher, NodeReport, reply sending, PRNG | Also holds init/deinit of everything, buffers, latch, the driver vtable |
-| `artnet_dmx.c` (new) | **Data part:** shadow/active buffers, `ArtNet_DataStart/Stop`, latch, `get_universe`, the `dmx_input_artnet` vtable, ArtDmx and ArtSync handlers | Spread over `artnet.c` and `artnet_handlers.c` |
+| `artnet_dmx.c` (new) | **Data part:** shadow/active buffers, `ArtNet_EnableOutput/DisableOutput`, latch, `get_universe`, the `dmx_input_artnet` vtable, ArtDmx and ArtSync handlers | Spread over `artnet.c` and `artnet_handlers.c` |
 | `artnet_command.c` (new) | The transitional ArtCommand text parser (OpenTubeDia verbs). Deleted as one file when RDM replaces it. | ~385 lines in `artnet_handlers.c` |
 | `artnet_handlers.c` | Control packets: ArtPoll, ArtAddress, ArtInput, ArtDataRequest (~270 lines) | Also ArtDmx, ArtSync, ArtCommand |
 | `artnet_pollreply.c` | ArtPollReply build/send **and** the reply queue, now including `ArtNet_ReplyImmediate(Status)` (shared) and `ArtNet_RemoveQueuedPollReply` (private) | Those three are `static` in `artnet_handlers.c` |
@@ -76,20 +76,20 @@ Four commits, each built and bench-tested before the next. The first two are **p
   A second call returns 0.
 - `ArtNet_Deinit` is deleted. The node lives as long as the firmware.
 - **The shadow mutex is never deleted any more.** That removes the "deinit deletes the mutex `latch` is waiting on" half of follow-up item 12. The other half (non-atomic `active_driver` swap) stays with the UI/input-switching step.
-- Dispatcher: when `!g_artnet_ctx.data_enabled`, ArtDmx and ArtSync are dropped silently and counted in `artnet_ignored_count`, before any length check. Dropping them must not touch the NodeReport.
+- Dispatcher: when `!g_artnet_ctx.output_enabled`, ArtDmx and ArtSync are dropped silently and counted in `artnet_ignored_count`, before any length check. Dropping them must not touch the NodeReport.
 
 **`artnet_dmx.c` (data part)**
-- `int ArtNet_DataStart(osThreadId_t task)` becomes the vtable `init`. It returns -1 if the node isn't initialized. Under `LOCK_TCPIP_CORE` it:
+- `int ArtNet_EnableOutput(osThreadId_t task)` becomes the vtable `init`. It returns -1 if the node isn't initialized. Under `LOCK_TCPIP_CORE` it:
   - zeroes `universes[]`
   - sets `processing_task = task`
-  - sets `data_enabled = true`
+  - sets `output_enabled = true`
 
-  Then it zeroes both buffers under `shadow_mutex`.
-- `void ArtNet_DataStop(void)` becomes the vtable `deinit`. Under the core lock it sets `data_enabled = false`, zeroes `universes[]` and sets `processing_task = NULL`. Then it zeroes the buffers under the mutex, so the strip goes dark.
-- `data_enabled` is a new `bool` in `ArtNet_Context_t`. It is tcpip-owned: written only under the core lock and read in `tcpip_thread`. The lock orders the accesses, so no atomics are needed.
+  Before that it zeroes both buffers under `shadow_mutex`, so a new session never shows stale universes.
+- `void ArtNet_DisableOutput(void)` becomes the vtable `deinit`. Under the core lock it sets `output_enabled = false`, zeroes `universes[]` and sets `processing_task = NULL`. It leaves the buffers alone: a switch counts as input lost, the strip holds its last frame and the failsafe policy applies (zeroing here could tear a frame `EffectTask` is rendering). The DMX512 driver follows the same rule. Names: `EnableOutput/DisableOutput` because, in Art-Net terms, the switched thing is the node's output ports (NumPorts, SwOut, ArtDmx = OpOutput); "Input" would clash with ArtInput, which works in the opposite direction.
+- `output_enabled` is a new `bool` in `ArtNet_Context_t`. It is tcpip-owned: written only under the core lock and read in `tcpip_thread`. The lock orders the accesses, so no atomics are needed.
 
 **Port count in one place**
-- Add `uint8_t ArtNet_GetPortCount(void)` in `artnet.c`, declared internal. It returns `data_enabled ? DeviceConfig_GetUniverseCount() : 0`.
+- Add `uint8_t ArtNet_GetPortCount(void)` in `artnet.c`, declared internal. It returns `output_enabled ? DeviceConfig_GetUniverseCount() : 0`.
 - Use it in `ArtNet_SendPollReply` (NumPorts and the port loop) and in `ArtNet_HandleArtPoll` (targeted mode: with 0 ports no range matches, so there is no reply, which is correct).
 - This is the first step towards follow-up item 4's Port-Address helpers. Don't do item 4 itself here; it belongs to Phase C.
 
@@ -99,7 +99,7 @@ Four commits, each built and bench-tested before the next. The first two are **p
 
 **Narrow `artnet.h` (follow-up item 5)**
 - Public: only `ArtNet_NodeInit()`, plus the Doxygen for it. The `dmx_input_artnet` driver symbol stays declared in `dmx_input.h`.
-- Move `ArtNet_UniverseState_t`, `ArtNet_GetUniverseData`, `ArtNet_LatchData`, `ArtNet_DataStart/Stop` to `artnet_internal.h`. `artnet.h` then no longer pulls in LwIP headers.
+- Move `ArtNet_UniverseState_t`, `ArtNet_GetUniverseData`, `ArtNet_LatchData`, `ArtNet_EnableOutput/DisableOutput` to `artnet_internal.h`. `artnet.h` then no longer pulls in LwIP headers.
 
 **`dmx_input.h`:** the vtable comment "init/deinit are called from a thread with LwIP access" becomes "init/deinit are called from `ControlTask`". The Art-Net driver no longer creates network resources.
 

@@ -28,6 +28,16 @@ Reply timing:
 
 Implementation: `ArtNet_SendReply()` in `Core/Src/Art-Net/artnet.c`; reply queue in `ArtNet_HandleArtPoll()` (`artnet_handlers.c`) and `ArtNet_RemoveQueuedPollReply()` (`artnet_pollreply.c`).
 
+## DMX512 mode — implemented
+
+The Art-Net node runs whatever the DMX input source is. With DMX512 (later also sACN) as the input:
+
+- The ArtPollReply reports **NumPorts = 0**: no SwOut, no GoodOutput. Controllers don't offer the tube as an Art-Net output.
+- ArtDmx and ArtSync are dropped silently.
+- Discovery, the NodeReport, the custom ArtCommands, ArtInput and ArtDataRequest work as in Art-Net mode. `DmxAddress` then sets the DMX512 start address.
+
+OpenTubeDia must handle a reply with an empty port list.
+
 ## NodeReport format — implemented
 
 The `NodeReport` field of every `ArtPollReply` is formatted as:

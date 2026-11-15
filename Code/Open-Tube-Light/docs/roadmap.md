@@ -36,7 +36,6 @@ Switching input source should commit through `device_config` and restart the act
 
 Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested order: `artnet-compliance.md`. Structure, robustness and process follow-ups from the November 2026 audit: `plans/artnet-audit-followups.md`. Bench regression suite: `tools/artnet_bench_test.py`.
 
-- [ ] **Art-Net control plane always on** — split the node (socket, discovery, ArtCommand/ArtAddress) from the `dmx_input` data driver. **Next step (decided 2026-11-14: groundwork first)**, together with moving the ArtCommand parser into `artnet_command.c`, so Phase E and RDM have a node that exists in every input mode. → `plans/artnet-groundwork.md`
 - [ ] **ArtAddress** — handler is a stub that replies `RcConfigErr`. First slice: short/long name, Net/SubSwitch, contiguous SwOut, AcFailHold/Zero/Full, AcCancelMerge, AcClearOp0; runtime-only. → `plans/config-commits-and-artaddress.md` phase C
 - [ ] **Locate via ArtAddress `AcLedLocate`** — tube flashes white at 2 Hz until `AcLedNormal`. Replaces the dropped custom ArtTrigger KeyWink. The OLED corner dot and `AcLedMute` come with the menu system (Local UI). Contract in `artnet-custom-protocol.md`. → `plans/config-commits-and-artaddress.md` phase D
 - [ ] **RDM responder over Art-Net** (after flash persistence and network settings; the largest planned item) — `DMX_START_ADDRESS`, `DMX_PERSONALITY` (segment count × mode), `IDENTIFY_DEVICE`, `DEVICE_LABEL`. Replaces OpenTubeDia's custom ArtCommand verbs and NodeReport fields; OpenTubeDia is then deprecated (it stays until then because Lightkey has no RDM). Later the same responder on the DMX512 line (UART5 has RS-485 DE). Design notes: `artnet-compliance.md` 11.12.
@@ -59,6 +58,8 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 - [ ] Host-side unit tests for pure logic (ArtCommand parser, NodeReport formatter, config validation, ArtAddress decoding) → `plans/artnet-audit-followups.md` item 14
 
 ## Done
+
+- [x] Art-Net node always on (`plans/artnet-groundwork.md` commits 1–3): ArtCommand parser in `artnet_command.c`, data part in `artnet_dmx.c`, `ArtNet_NodeInit()` at boot; with DMX512 as input the tube answers discovery and ArtCommand and reports NumPorts = 0 (bench-verified 2026-11-15, both modes)
 
 - [x] Plans tracked in git; bench script in `tools/`; LwIP core lock around Art-Net PCB setup/teardown; per-unit ArtPollReply delay seed; poll-reply timer failure no longer wedges replies; chained pbufs dropped; shared `DMX_INPUT_FLAG_FRAME_READY`; unused `DeviceConfig_BuildArtNetOutputAddressList()` removed; stale comments rewritten (`plans/artnet-audit-followups.md`, "Done in the cleanup commit") — bench-verified: `tools/artnet_bench_test.py` 57/57 with Lightkey streaming
 
