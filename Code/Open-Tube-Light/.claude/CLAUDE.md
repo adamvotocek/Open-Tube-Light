@@ -89,9 +89,8 @@ All documentation lives in `docs/` — never put `.md` files in `Core/` or other
   * `dmx512-A.md`: ANSI E1.11 §8–9 timings and packet layout.
   * `protocol-failsafes.md`, ST manuals (`UM2217` HAL/LL, `UM1713` LwIP) as PDFs.
 * **`docs/plans/`** : design plans; finished ones move to `completed/`. Where plans disagree, the newer, more specific one wins, and the older one gets a status note.
-  * `artnet-groundwork.md`: **next step**. Always-on Art-Net node, file split, 6 s failsafe (follow-ups items 1, 3, 5, 11).
+  * `config-commits-and-artaddress.md`: **next step**. Config service, ArtAddress, locate.
   * `artnet-audit-followups.md`: open audit findings, each with the step it belongs to.
-  * `config-commits-and-artaddress.md`: config service, ArtAddress, locate (after the groundwork).
   * `flash-persistence.md`: decided persistence design (two-sector journal, erase only at boot).
   * `device-config-refactor.md`: long-range config plan (persistence, network). Phases 2–3 are superseded.
   * `memory-tuning.md`: stacks, `tcpip_thread` load.

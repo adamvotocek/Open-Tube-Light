@@ -80,7 +80,7 @@ typedef struct {
      * @brief Protocol-specific disconnect timeout in milliseconds
      * 
      * After this duration without new data, the consumer applies failsafe.
-     * Art-Net=5000 (must exceed the spec's 4 s ArtDmx keep-alive),
+     * Art-Net=6000 (must exceed the spec's 4 s ArtDmx keep-alive),
      * sACN=2500 (E1.31 network data loss), DMX512=1250 (E1.11 break-to-break).
      */
     uint32_t failsafe_timeout_ms;

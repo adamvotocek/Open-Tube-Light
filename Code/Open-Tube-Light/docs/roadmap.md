@@ -54,12 +54,12 @@ Full spec-vs-firmware feature matrix, infrastructure prerequisites and suggested
 
 - [ ] Re-budget task stacks and FreeRTOS heap from measured `stack_monitor_report` values (bench, under Art-Net load + ArtPoll/ArtCommand traffic); `tcpip_thread` (2048 B) is the first candidate to shrink. → `plans/memory-tuning.md`
 - [ ] Move ArtCommand parsing / config apply out of `tcpip_thread` (comes with serialized config commits).
-- [ ] Art-Net robustness follow-ups: sequence resync after a controller restart, Live Watch stats (send/alloc failures, dropped ArtDmx), NodeReport `RcParseFail` timeout, failsafe timeout 6 s (decided), `sys_timeout()` for the poll reply → `plans/artnet-audit-followups.md` items 7–11
+- [ ] Art-Net robustness follow-ups: sequence resync after a controller restart, Live Watch stats (send/alloc failures, dropped ArtDmx), NodeReport `RcParseFail` timeout, `sys_timeout()` for the poll reply → `plans/artnet-audit-followups.md` items 7–10
 - [ ] Host-side unit tests for pure logic (ArtCommand parser, NodeReport formatter, config validation, ArtAddress decoding) → `plans/artnet-audit-followups.md` item 14
 
 ## Done
 
-- [x] Art-Net node always on (`plans/artnet-groundwork.md` commits 1–3): ArtCommand parser in `artnet_command.c`, data part in `artnet_dmx.c`, `ArtNet_NodeInit()` at boot; with DMX512 as input the tube answers discovery and ArtCommand and reports NumPorts = 0 (bench-verified 2026-11-15, both modes)
+- [x] Art-Net groundwork (`plans/completed/artnet-groundwork.md`): ArtCommand parser in `artnet_command.c`, data part in `artnet_dmx.c`, node always on via `ArtNet_NodeInit()` at boot (with DMX512 as input the tube answers discovery and ArtCommand and reports NumPorts = 0), Art-Net failsafe timeout 6 s (bench-verified 2026-11-15)
 
 - [x] Plans tracked in git; bench script in `tools/`; LwIP core lock around Art-Net PCB setup/teardown; per-unit ArtPollReply delay seed; poll-reply timer failure no longer wedges replies; chained pbufs dropped; shared `DMX_INPUT_FLAG_FRAME_READY`; unused `DeviceConfig_BuildArtNetOutputAddressList()` removed; stale comments rewritten (`plans/artnet-audit-followups.md`, "Done in the cleanup commit") — bench-verified: `tools/artnet_bench_test.py` 57/57 with Lightkey streaming
 

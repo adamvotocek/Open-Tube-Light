@@ -1,6 +1,8 @@
 # Plan: Art-Net groundwork (always-on node, file split, 6 s failsafe)
 
-**Status (2026-11-15):** commits 1–3 done (1–2 bench 57/57 with Lightkey; 3 bench 58/58 in Art-Net mode and 58/58 with `--mode dmx512`), commit 4 open. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
+> **Completed 2026-11-15** in four commits: `b9e94b8` (ArtCommand move), `2156c24` (data part move), `5f5063d` (always-on node), then the 6 s failsafe. Bench: commits 1–2 57/57 with Lightkey; commit 3 58/58 in Art-Net mode and 58/58 with `--mode dmx512`; commit 4 58/58 plus the `monitor` stopwatch test. Kept for the reasoning. Later changes: the data-part switch was renamed during commit 3 from `ArtNet_DataStart/Stop` to `ArtNet_EnableOutput/DisableOutput` (this plan uses the new names), and drivers clear their buffers on start only (`dmx-input-drivers.md`, "Input switch = input lost").
+
+**Status (2026-11-15):** done. This is `artnet-compliance.md` §12 step 2. It comes before `config-commits-and-artaddress.md` and implements `artnet-audit-followups.md` items 1, 3, 5 and 11.
 
 ## In short
 

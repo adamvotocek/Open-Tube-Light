@@ -35,7 +35,7 @@ Modes
                    answer everything above, with NumPorts = 0, and 'ignored' also sends
                    ArtDmx / ArtSync (incl. a truncated ArtDmx), which must be dropped
                    silently. Needs a build that boots in DMX512 mode
-                   (docs/plans/artnet-groundwork.md, commit 3 verification).
+                   (docs/plans/completed/artnet-groundwork.md, commit 3 verification).
 
 Not testable over the network: Port-Address 0 rejection (ArtAddress is still a stub and
 ArtCommand has no universe verb).
@@ -576,6 +576,8 @@ def monitor(t, interval):
               "a blackout still sends ArtDmx) and press Enter at the same moment.",
               "DATA must clear about 5-7 s after Enter (5 s timeout + poll period + 0..1 s reply delay).",
               "'swallowed' = the first poll got no reply; with Lightkey on this PC it must stay 0.",
+              "Stopwatch: the strip switches to the failsafe output about 6 s after Enter "
+              "(ARTNET_FAILSAFE_TIMEOUT_MS), i.e. about 1 s after the 5 s source timeout.",
               "Live Watch: failsafe_count rises once when the signal is lost, render_count stops."])
     last_state, marker, start = None, None, time.monotonic()
     polls = swallowed = 0
@@ -661,7 +663,7 @@ def main():
     print(f" {t.passed} passed, {t.failed} failed")
     print("=" * 78)
     if args.test == "all" and args.mode == "artnet":
-        print("  Next: run 'monitor' and stop Lightkey output to check GoodOutputA clears after ~5 s.")
+        print("  Next: run 'monitor' and stop Lightkey output: GoodOutputA clears after ~5 s, failsafe after ~6 s.")
     elif args.test == "all":
         print("  Live Watch: artnet_ignored_count rises with every ArtDmx; the strip ignores Art-Net.")
     return 1 if t.failed else 0

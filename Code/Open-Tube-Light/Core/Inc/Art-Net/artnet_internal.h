@@ -29,11 +29,12 @@ extern "C" {
 /**
  * @brief Art-Net failsafe timeout reported to dmx_input (ms)
  *
- * Must exceed the 4 s ArtDmx keep-alive of a controller sending static data,
- * and must not be shorter than the disconnect timeout, so the source lock is
- * released by the time failsafe kicks in.
+ * Must exceed the 4 s ArtDmx keep-alive of a controller sending static data
+ * (Art-Net 4: resend at least every 4 s), with margin for jitter on that
+ * keep-alive; Must not be shorter than ARTNET_DISCONNECT_TIMEOUT_MS (5 s), so
+ * the source lock is released by the time failsafe kicks in.
  */
-#define ARTNET_FAILSAFE_TIMEOUT_MS  5000U
+#define ARTNET_FAILSAFE_TIMEOUT_MS  6000U
 
 _Static_assert(ARTNET_DISCONNECT_TIMEOUT_MS <= ARTNET_FAILSAFE_TIMEOUT_MS,
                "Source lock must expire no later than failsafe");
